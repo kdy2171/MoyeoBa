@@ -5,28 +5,35 @@ from google.oauth2.service_account import Credentials
 import json
 
 st.set_page_config(page_title="시간표", layout="wide")
-st.title("통합 시간표 관리 화면")
 if "방번호" not in st.session_state:
     st.session_state["방번호"] = ""
+if "팀이름" not in st.session_state:
+    st.session_state["팀이름"] = ""
 
 if st.session_state["방번호"] == "":
-    st.subheader("시간표 방 입장하기")
+    st.subheader("시간표 방 접속하기")
     입력번호 = st.text_input("팀 식별번호를 적어주세요")
+    입력이름 = st.text_input("팀 이름을 적어주세요")
     
     if st.button("입장"):
         st.session_state["방번호"] = 입력번호
+        st.session_state["팀이름"] = 입력이름
         st.rerun()
         
     st.divider()
     
     st.subheader("새로운 팀 방 만들기")
     새방번호 = st.text_input("원하는 식별번호를 정해주세요")
+    새이름 = st.text_input("새로운 팀 이름을 정해주세요")
     
     if st.button("방 만들기"):
         st.session_state["방번호"] = 새방번호
+        st.session_state["팀이름"] = 새이름
         st.rerun()
         
     st.stop()
+
+st.markdown(f"<h1>통합 시간표 관리 화면 <span style='font-size: 0.5em; background-color: #f0f2f6; padding: 5px 10px; border-radius: 10px; color: #ff4b4b;'>{st.session_state['팀이름']}</span></h1>", unsafe_allow_html=True)
 
 st.write("현재 방 번호:", st.session_state["방번호"])
 if st.button("방 나가기"):

@@ -14,7 +14,7 @@ st.title("통합 시간표 관리 화면")
 @st.cache_resource
 def 구글문서연결():
     접속권한 = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    신분증 = Credentials.from_service_account_file("key.json", scopes=접속권한)
+    신분증 = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=접속권한)
     연결망 = gspread.authorize(신분증)
     return 연결망.open("동아리_DB").sheet1
 
@@ -285,4 +285,5 @@ with 탭사:
             st.session_state.부원자료 = 편집된부원자료.fillna("")
             자료저장()
             st.session_state.새로고침번호 += 1
+
             st.rerun()

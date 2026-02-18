@@ -5,6 +5,7 @@ from google.oauth2.service_account import Credentials
 import json
 
 st.set_page_config(page_title="시간표", layout="wide")
+
 if "방번호" not in st.session_state:
     st.session_state["방번호"] = ""
 if "팀이름" not in st.session_state:
@@ -13,11 +14,10 @@ if "팀이름" not in st.session_state:
 if st.session_state["방번호"] == "":
     st.subheader("시간표 방 접속하기")
     입력번호 = st.text_input("팀 식별번호를 적어주세요")
-    입력이름 = st.text_input("팀 이름을 적어주세요")
     
     if st.button("입장"):
         st.session_state["방번호"] = 입력번호
-        st.session_state["팀이름"] = 입력이름
+        st.session_state["팀이름"] = ""
         st.rerun()
         
     st.divider()
@@ -33,20 +33,13 @@ if st.session_state["방번호"] == "":
         
     st.stop()
 
-st.markdown(f"<h1>통합 시간표 관리 화면 <span style='font-size: 0.5em; background-color: #f0f2f6; padding: 5px 10px; border-radius: 10px; color: #ff4b4b;'>{st.session_state['팀이름']}</span></h1>", unsafe_allow_html=True)
-
-st.write("현재 방 번호:", st.session_state["방번호"])
-if st.button("방 나가기"):
-    st.session_state["방번호"] = ""
-    st.rerun()
-시간대 = [f"{i}시({i-8}교시)" for i in range(9, 24)]
-요일 = ["월", "화", "수", "목", "금"]
-부원항목 = ["이름", "학번", "학과", "학년", "전화번호", "파트", "통학여부", "회비여부", "개요1", "개요2", "개요3", "개요4"]
+표시이름 = st.session_state["팀이름"] if st.session_state["팀이름"] != "" else f"방 번호: {st.session_state['방번호']}"
+st.markdown(f"<h1>통합 시간표 관리 화면 <span style='font-size: 0.5em; background-color: #f0f2f6; padding: 5px 10px; border-radius: 10px; color: black;'>{표시이름}</span></h1>", unsafe_allow_html=True)
 
 @st.cache_resource
 def 구글문서연결():
     접속권한 = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    신분증 = Credentials.from_service_account_file("key.json", scopes=접속권한)
+    신분증 = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=접속권한)
     연결망 = gspread.authorize(신분증)
     return 연결망.open("동아리_DB").sheet1
 

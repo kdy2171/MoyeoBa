@@ -6,7 +6,32 @@ import json
 
 st.set_page_config(page_title="시간표", layout="wide")
 st.title("통합 시간표 관리 화면")
+if "방번호" not in st.session_state:
+    st.session_state["방번호"] = ""
 
+if st.session_state["방번호"] == "":
+    st.subheader("시간표 방 입장하기")
+    입력번호 = st.text_input("팀 식별번호를 적어주세요")
+    
+    if st.button("입장"):
+        st.session_state["방번호"] = 입력번호
+        st.rerun()
+        
+    st.divider()
+    
+    st.subheader("새로운 팀 방 만들기")
+    새방번호 = st.text_input("원하는 식별번호를 정해주세요")
+    
+    if st.button("방 만들기"):
+        st.session_state["방번호"] = 새방번호
+        st.rerun()
+        
+    st.stop()
+
+st.write("현재 방 번호:", st.session_state["방번호"])
+if st.button("방 나가기"):
+    st.session_state["방번호"] = ""
+    st.rerun()
 시간대 = [f"{i}시({i-8}교시)" for i in range(9, 24)]
 요일 = ["월", "화", "수", "목", "금"]
 부원항목 = ["이름", "학번", "학과", "학년", "전화번호", "파트", "통학여부", "회비여부", "개요1", "개요2", "개요3", "개요4"]
@@ -14,7 +39,7 @@ st.title("통합 시간표 관리 화면")
 @st.cache_resource
 def 구글문서연결():
     접속권한 = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    신분증 = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=접속권한)
+    신분증 = Credentials.from_service_account_file("key.json", scopes=접속권한)
     연결망 = gspread.authorize(신분증)
     return 연결망.open("동아리_DB").sheet1
 
@@ -285,5 +310,4 @@ with 탭사:
             st.session_state.부원자료 = 편집된부원자료.fillna("")
             자료저장()
             st.session_state.새로고침번호 += 1
-
             st.rerun()

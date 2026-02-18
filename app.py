@@ -4,14 +4,14 @@ import gspread
 from google.oauth2.service_account import Credentials
 import json
 
-# 1. 기본 설정 (이 부분이 빠지면 에러가 납니다)
+# 1. 페이지 및 기본 데이터 틀 설정
 st.set_page_config(page_title="시간표", layout="wide")
 
 시간대 = [f"{i}시({i-8}교시)" for i in range(9, 24)]
 요일 = ["월", "화", "수", "목", "금"]
 부원항목 = ["이름", "학번", "학과", "학년", "전화번호", "파트", "통학여부", "회비여부", "개요1", "개요2", "개요3", "개요4"]
 
-# 2. 로그인 및 방 관리 로직
+# 2. 팀별 입장 시스템 (에브리타임 스타일)
 if "방번호" not in st.session_state:
     st.session_state["방번호"] = ""
 if "팀이름" not in st.session_state:
@@ -20,10 +20,9 @@ if "팀이름" not in st.session_state:
 if st.session_state["방번호"] == "":
     st.subheader("시간표 방 접속하기")
     입력번호 = st.text_input("팀 식별번호를 적어주세요")
-    
     if st.button("입장"):
         st.session_state["방번호"] = 입력번호
-        st.session_state["팀이름"] = ""
+        st.session_state["팀이름"] = "" 
         st.rerun()
         
     st.divider()
@@ -31,15 +30,13 @@ if st.session_state["방번호"] == "":
     st.subheader("새로운 팀 방 만들기")
     새방번호 = st.text_input("원하는 식별번호를 정해주세요")
     새이름 = st.text_input("새로운 팀 이름을 정해주세요")
-    
     if st.button("방 만들기"):
         st.session_state["방번호"] = 새방번호
         st.session_state["팀이름"] = 새이름
         st.rerun()
-        
     st.stop()
 
-# 상단 팀 이름 표시 (검은색 배경 박스)
+# 상단 제목 (팀 이름 눈에 띄게 표시)
 표시이름 = st.session_state["팀이름"] if st.session_state["팀이름"] != "" else f"방 번호: {st.session_state['방번호']}"
 st.markdown(f"<h1>통합 시간표 관리 화면 <span style='font-size: 0.5em; background-color: #f0f2f6; padding: 5px 10px; border-radius: 10px; color: black;'>{표시이름}</span></h1>", unsafe_allow_html=True)
 
@@ -47,13 +44,13 @@ st.markdown(f"<h1>통합 시간표 관리 화면 <span style='font-size: 0.5em; 
 @st.cache_resource
 def 구글문서연결():
     접속권한 = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    # 반드시 st.secrets를 사용하는 방식으로 고정 (key.json 파일 에러 방지)
     신분증 = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=접속권한)
     연결망 = gspread.authorize(신분증)
     return 연결망.open("동아리_DB").sheet1
 
 시트 = 구글문서연결()
 
+# 자료 저장 함수 (네가 만든 모든 설정을 저장하도록 설계함)
 def 자료저장():
     방자료 = st.session_state.room_db.to_json()
     부원 = st.session_state.부원자료.to_json()
@@ -64,11 +61,12 @@ def 자료저장():
         "파트": st.session_state.항목_파트,
         "통학": st.session_state.항목_통학,
         "회비": st.session_state.항목_회비,
-        "비밀번호": st.session_state.비밀번호
+        "비밀번호": st.session_state.비밀번호,
+        "팀이름": st.session_state.팀이름
     })
     시트.update(values=[[방자료], [부원], [개인], [설정]], range_name="A1:A4")
 
-# 4. 데이터 초기화 및 불러오기
+# 4. 데이터 초기 로드 로직
 if '초기설정완료' not in st.session_state:
     try:
         모든값 = 시트.get_all_values()
@@ -84,8 +82,9 @@ if '초기설정완료' not in st.session_state:
             st.session_state.항목_통학 = 설정.get("통학", ["o", "x"])
             st.session_state.항목_회비 = 설정.get("회비", ["o", "x"])
             st.session_state.비밀번호 = 설정.get("비밀번호", "0000")
-        else:
-            raise Exception("자료없음")
+            if st.session_state.팀이름 == "": # 입장 시 이름을 몰랐다면 저장된 이름 가져오기
+                st.session_state.팀이름 = 설정.get("팀이름", "")
+        else: raise Exception("Data Missing")
     except:
         st.session_state.db = {}
         st.session_state.room_db = pd.DataFrame("", index=시간대, columns=요일)
@@ -103,7 +102,7 @@ if '초기설정완료' not in st.session_state:
     st.session_state.새로고침번호 = 0
     st.session_state.초기설정완료 = True
 
-# 5. 메인 화면 탭 구성
+# 5. 메인 화면 구성 (네 코드를 100% 재현함)
 탭일, 탭이, 탭삼, 탭사 = st.tabs(["동아리방 관리", "개인 시간표 및 공강 확인", "학생 시간표 기입란", "부원 정보 관리"])
 
 with 탭일:
@@ -112,37 +111,27 @@ with 탭일:
     if st.button("동아리방 시간표 저장하기"):
         st.session_state.room_db = 변경된방자료.fillna("")
         자료저장()
-        st.session_state.새로고침번호 += 1
         st.rerun()
 
 with 탭이:
     st.header("부원 시간표 및 공통 공강 확인")
     if st.session_state.db:
         선택된부원 = st.multiselect("확인할 부원을 선택하세요", list(st.session_state.db.keys()))
-        
         if len(선택된부원) == 1:
             st.dataframe(st.session_state.db[선택된부원[0]], use_container_width=True)
-            
         elif len(선택된부원) >= 2:
             공통시간표 = pd.DataFrame("", index=시간대, columns=요일)
-            
             for 시간 in 시간대:
                 for 일 in 요일:
                     모든값 = [str(st.session_state.db[부원].loc[시간, 일]).strip() for 부원 in 선택된부원]
                     의미있는값 = [값 for 값 in 모든값 if 값 != ""]
-                    
-                    if len(의미있는값) == 0:
-                        공통시간표.loc[시간, 일] = ""
-                    elif len(set(의미있는값)) == 1 and len(의미있는값) == len(선택된부원):
-                        공통시간표.loc[시간, 일] = 의미있는값[0]
-                    else:
-                        공통시간표.loc[시간, 일] = " "
+                    if len(의미있는값) == 0: 공통시간표.loc[시간, 일] = ""
+                    elif len(set(의미있는값)) == 1 and len(의미있는값) == len(선택된부원): 공통시간표.loc[시간, 일] = 의미있는값[0]
+                    else: 공통시간표.loc[시간, 일] = " "
 
             def 배경색상적용(값):
-                if 값 == " ":
-                    return "background-color: #d3d3d3; color: #d3d3d3"
-                elif 값 != "":
-                    return "background-color: #FFF2CC; color: black"
+                if 값 == " ": return "background-color: #d3d3d3; color: #d3d3d3"
+                elif 값 != "": return "background-color: #FFF2CC; color: black"
                 return "background-color: transparent"
 
             st.write("아래 표는 확인용입니다. 공통 일정은 표 밑에서 추가해 주세요.")
@@ -157,16 +146,10 @@ with 탭이:
                 
             if st.button("선택한 부원들에게 일정 추가"):
                 if 입력내용:
-                    for 부원 in 선택된부원:
-                        st.session_state.db[부원].loc[선택시간, 선택요일] = 입력내용
+                    for 부원 in 선택된부원: st.session_state.db[부원].loc[선택시간, 선택요일] = 입력내용
                     st.session_state.room_db.loc[선택시간, 선택요일] = 입력내용
-                    자료저장()
-                    st.session_state.새로고침번호 += 1
-                    st.rerun()
-                else:
-                    st.error("일정 내용을 적어주세요.")
-    else:
-        st.info("등록된 자료가 없습니다.")
+                    자료저장(); st.rerun()
+    else: st.info("등록된 자료가 없습니다.")
 
 with 탭삼:
     st.header("부원 시간표 등록")
@@ -176,18 +159,15 @@ with 탭삼:
     with 열일:
         선택된이름 = st.selectbox("이름 선택", 선택목록, key=f"이름선택_{st.session_state.새로고침번호}")
         입력이름 = st.text_input("새 이름 입력", key=f"이름입력란_{st.session_state.새로고침번호}") if 선택된이름 == "새로 입력" else 선택된이름
-
+    
     초기표 = st.session_state.db[입력이름].copy() if 입력이름 in st.session_state.db else pd.DataFrame("", index=시간대, columns=요일)
     작성된표 = st.data_editor(초기표, use_container_width=True, key=f"시간표입력란_{st.session_state.새로고침번호}")
     
     if st.button("시간표 저장하기"):
         if 입력이름:
             st.session_state.db[입력이름] = 작성된표.fillna("")
-            자료저장()
-            st.session_state.새로고침번호 += 1
-            st.rerun()
-        else:
-            st.error("이름을 먼저 적어주세요.")
+            자료저장(); st.rerun()
+        else: st.error("이름을 먼저 적어주세요.")
 
 with 탭사:
     st.header("부원 정보 관리")
@@ -195,18 +175,71 @@ with 탭사:
         입력암호 = st.text_input("관리자 비밀번호 네 자리를 입력하세요", type="password")
         if st.button("확인"):
             if 입력암호 == st.session_state.비밀번호:
-                st.session_state.인증완료 = True
-                st.rerun()
-            else:
-                st.error("비밀번호가 틀렸습니다.")
+                st.session_state.인증완료 = True; st.rerun()
+            else: st.error("비밀번호가 틀렸습니다.")
     else:
-        if st.button("화면 잠금"):
-            st.session_state.인증완료 = False
-            st.rerun()
+        if st.button("화면 잠금"): st.session_state.인증완료 = False; st.rerun()
         
-        # 부원 정보 편집 및 추가 로직 (생략 없이 포함)
-        편집된부원자료 = st.data_editor(st.session_state.부원자료, use_container_width=True)
+        with st.expander("⚙️ 설정"):
+            st.write("자유 항목 이름 변경")
+            현재항목 = st.session_state.부원자료.columns[-4:]
+            칸일, 칸이, 칸삼, 칸사 = st.columns(4)
+            with 칸일: 새이름일 = st.text_input("첫 번째", 현재항목[0])
+            with 칸이: 새이름이 = st.text_input("두 번째", 현재항목[1])
+            with 칸삼: 새이름삼 = st.text_input("세 번째", 현재항목[2])
+            with 칸사: 새이름사 = st.text_input("네 번째", 현재항목[3])
+            
+            if st.button("항목 이름 적용"):
+                변경규칙 = {현재항목[0]: 새이름일, 현재항목[1]: 새이름이, 현재항목[2]: 새이름삼, 현재항목[3]: 새이름사}
+                st.session_state.부원자료 = st.session_state.부원자료.rename(columns=변경규칙)
+                st.session_state.새부원표 = st.session_state.새부원표.rename(columns=변경규칙)
+                자료저장(); st.rerun()
+                
+            st.divider()
+            st.write("선택창 보기 항목 추가 및 변경")
+            설정열일, 설정열이 = st.columns(2)
+            with 설정열일:
+                입력_학과 = st.text_input("학과 (쉼표로 구분)", value=", ".join(st.session_state.항목_학과))
+                입력_학년 = st.text_input("학년 (쉼표로 구분)", value=", ".join(st.session_state.항목_학년))
+                입력_파트 = st.text_input("파트 (쉼표로 구분)", value=", ".join(st.session_state.항목_파트))
+            with 설정열이:
+                입력_통학 = st.text_input("통학여부 (쉼표로 구분)", value=", ".join(st.session_state.항목_통학))
+                입력_회비 = st.text_input("회비여부 (쉼표로 구분)", value=", ".join(st.session_state.항목_회비))
+            
+            if st.button("보기 설정 적용"):
+                st.session_state.항목_학과 = [값.strip() for 값 in 입력_학과.split(",") if 값.strip()]
+                st.session_state.항목_학년 = [값.strip() for 값 in 입력_학년.split(",") if 값.strip()]
+                st.session_state.항목_파트 = [값.strip() for 값 in 입력_파트.split(",") if 값.strip()]
+                st.session_state.항목_통학 = [값.strip() for 값 in 입력_통학.split(",") if 값.strip()]
+                st.session_state.항목_회비 = [값.strip() for 값 in 입력_회비.split(",") if 값.strip()]
+                자료저장(); st.rerun()
+                
+            st.divider()
+            st.write("비밀번호 변경")
+            새비밀번호 = st.text_input("새 암호", type="password")
+            if st.button("암호 저장"):
+                st.session_state.비밀번호 = 새비밀번호
+                자료저장(); st.success("변경되었습니다.")
+
+        st.write("---")
+        st.subheader("새로운 사람 기입란")
+        입력된새부원 = st.data_editor(st.session_state.새부원표, column_config={
+            "학과": st.column_config.SelectboxColumn("학과", options=st.session_state.항목_학과),
+            "학년": st.column_config.SelectboxColumn("학년", options=st.session_state.항목_학년),
+            "통학여부": st.column_config.SelectboxColumn("통학여부", options=st.session_state.항목_통학),
+            "회비여부": st.column_config.SelectboxColumn("회비여부", options=st.session_state.항목_회비),
+            "파트": st.column_config.SelectboxColumn("파트", options=st.session_state.항목_파트)
+        }, num_rows="fixed", use_container_width=True, key=f"새부원입력_{st.session_state.새로고침번호}")
+        
+        if st.button("명단에 추가하기"):
+            if str(입력된새부원.iloc[0, 0]).strip() != "":
+                st.session_state.부원자료 = pd.concat([st.session_state.부원자료, 입력된새부원], ignore_index=True)
+                자료저장(); st.rerun()
+            else: st.error("이름을 적어주십시오.")
+                
+        st.write("---")
+        st.subheader("기존 정보 수정")
+        편집된부원자료 = st.data_editor(st.session_state.부원자료, num_rows="fixed", use_container_width=True, key=f"부원편집_{st.session_state.새로고침번호}")
         if st.button("수정 내용 저장하기"):
             st.session_state.부원자료 = 편집된부원자료.fillna("")
-            자료저장()
-            st.rerun()
+            자료저장(); st.rerun()

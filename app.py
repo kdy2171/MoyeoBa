@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 import json
 from datetime import datetime
 
-# 1. 필수 기본 설정 (NameError 방지)
+# 1. 필수 기본 설정
 st.set_page_config(page_title="시간표", layout="wide")
 
 시간대 = [f"{i}시({i-8}교시)" for i in range(9, 24)]
@@ -34,7 +34,6 @@ def 방찾기(번호):
         return None, None
 
 def 자료저장():
-    # A~I열까지 데이터 저장
     방자료 = st.session_state.room_db.to_json()
     부원자료 = st.session_state.부원자료.to_json()
     개인db = json.dumps({이름: 표.to_json() for 이름, 표 in st.session_state.db.items()})
@@ -77,8 +76,6 @@ if st.session_state["방번호"] == "":
                 st.session_state.항목_학년 = s.get("학년", ["1", "2", "3", "4"])
                 st.session_state.항목_파트 = s.get("파트", ["보컬", "보컬2", "기타1", "기타2", "통기타", "베이스", "드럼", "키보드", "기타악기"])
                 st.session_state.항목_통학, st.session_state.항목_회비, st.session_state.비밀번호 = s.get("통학", ["o","x"]), s.get("회비", ["o","x"]), s.get("비밀번호", "0000")
-                
-                # 안전한 데이터 로드
                 st.session_state.게시판 = json.loads(데이터[6]) if len(데이터) > 6 else []
                 st.session_state.곡정보 = json.loads(데이터[7]) if len(데이터) > 7 else {}
                 st.session_state.메모장 = 데이터[8] if len(데이터) > 8 else ""
@@ -153,7 +150,12 @@ with 탭2:
 
         선택 = st.multiselect("확인할 부원 선택", list(st.session_state.db.keys()), default=st.session_state.temp_선택)
         
-        if len(선택) >= 2:
+        # 1명 선택 시 개인 시간표 표시 (누락되었던 부분 복구!)
+        if len(선택) == 1:
+            st.dataframe(st.session_state.db[선택[0]], use_container_width=True)
+            
+        # 2명 이상 선택 시 공강 시간표 표시
+        elif len(선택) >= 2:
             공통 = pd.DataFrame("", index=시간대, columns=요일)
             for t in 시간대:
                 for d in 요일:
@@ -196,7 +198,6 @@ with 탭4:
             st.session_state.비밀번호 = sc2.text_input("비번 변경", st.session_state.비밀번호)
             if st.button("설정 저장"): 자료저장(); st.rerun()
 
-        # 표(에디터) 열 설정 - 새 부원 추가 및 명단 전체 수정에 동일하게 적용
         컬럼설정 = {
             "학과": st.column_config.SelectboxColumn(options=st.session_state.항목_학과),
             "학년": st.column_config.SelectboxColumn(options=st.session_state.항목_학년),

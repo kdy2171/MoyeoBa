@@ -34,7 +34,7 @@ def 방찾기(번호):
         return None, None
 
 def 자료저장():
-    # A~I열까지 데이터 저장 (곡정보/메모장 포함)
+    # A~I열까지 데이터 저장
     방자료 = st.session_state.room_db.to_json()
     부원자료 = st.session_state.부원자료.to_json()
     개인db = json.dumps({이름: 표.to_json() for 이름, 표 in st.session_state.db.items()})
@@ -55,7 +55,7 @@ def 자료저장():
     else:
         시트.append_row(새데이터)
 
-# 4. 입장 및 세션 초기화 (AttributeError 방지를 위해 모든 변수 초기화)
+# 4. 입장 및 세션 초기화
 if "방번호" not in st.session_state: st.session_state["방번호"] = ""
 if "팀이름" not in st.session_state: st.session_state["팀이름"] = ""
 
@@ -77,13 +77,14 @@ if st.session_state["방번호"] == "":
                 st.session_state.항목_학년 = s.get("학년", ["1", "2", "3", "4"])
                 st.session_state.항목_파트 = s.get("파트", ["보컬", "보컬2", "기타1", "기타2", "통기타", "베이스", "드럼", "키보드", "기타악기"])
                 st.session_state.항목_통학, st.session_state.항목_회비, st.session_state.비밀번호 = s.get("통학", ["o","x"]), s.get("회비", ["o","x"]), s.get("비밀번호", "0000")
-                # 게시판/곡정보/메모장 로드 (데이터 길이에 맞춰 안전하게)
+                
+                # 안전한 데이터 로드
                 st.session_state.게시판 = json.loads(데이터[6]) if len(데이터) > 6 else []
                 st.session_state.곡정보 = json.loads(데이터[7]) if len(데이터) > 7 else {}
                 st.session_state.메모장 = 데이터[8] if len(데이터) > 8 else ""
                 
                 st.session_state.인증완료, st.session_state.새로고침번호 = False, 0
-                st.session_state.temp_선택 = [] # 곡 버튼 클릭용 임시 저장소
+                st.session_state.temp_선택 = [] 
                 st.rerun()
             else: st.error("방을 찾을 수 없습니다.")
 
@@ -120,7 +121,6 @@ with 탭1:
 with 탭2:
     st.header("부원 시간표 및 곡별 멤버 확인")
     
-    # 2-1. 곡 멤버 설정 섹션
     with st.expander("🎸 곡별 참여 멤버 설정"):
         c1, c2 = st.columns([1, 2])
         곡이름 = c1.text_input("곡 이름")
@@ -141,19 +141,16 @@ with 탭2:
 
     st.divider()
 
-    # 2-2. 시간표 확인 섹션 (곡 버튼 클릭 시 자동 선택)
     if st.session_state.db:
         st.subheader("시간표 확인")
         if st.session_state.곡정보:
             st.write("곡 이름을 누르면 멤버들이 자동으로 선택됩니다:")
-            # 곡 버튼 생성
             btn_cols = st.columns(min(len(st.session_state.곡정보), 5))
             for i, 곡 in enumerate(st.session_state.곡정보.keys()):
                 if btn_cols[i % 5].button(곡, key=f"btn_{곡}"):
                     st.session_state.temp_선택 = st.session_state.곡정보[곡]
                     st.rerun()
 
-        # 멀티셀렉트 (곡 버튼 클릭 시 temp_선택 값이 기본값으로 적용됨)
         선택 = st.multiselect("확인할 부원 선택", list(st.session_state.db.keys()), default=st.session_state.temp_선택)
         
         if len(선택) >= 2:
@@ -198,8 +195,25 @@ with 탭4:
             st.session_state.항목_학년 = [x.strip() for x in sc2.text_input("학년 리스트", ", ".join(st.session_state.항목_학년)).split(",") if x.strip()]
             st.session_state.비밀번호 = sc2.text_input("비번 변경", st.session_state.비밀번호)
             if st.button("설정 저장"): 자료저장(); st.rerun()
+
+        # 표(에디터) 열 설정 - 새 부원 추가 및 명단 전체 수정에 동일하게 적용
+        컬럼설정 = {
+            "학과": st.column_config.SelectboxColumn(options=st.session_state.항목_학과),
+            "학년": st.column_config.SelectboxColumn(options=st.session_state.항목_학년),
+            "파트": st.column_config.SelectboxColumn(options=st.session_state.항목_파트),
+            "통학여부": st.column_config.SelectboxColumn(options=st.session_state.항목_통학),
+            "회비여부": st.column_config.SelectboxColumn(options=st.session_state.항목_회비)
+        }
+
+        st.subheader("새 부원 추가")
+        st.session_state.새부원표 = pd.DataFrame([["", "", st.session_state.항목_학과[0], st.session_state.항목_학년[0], "", st.session_state.항목_파트[0], "x", "x", "", "", "", ""]], columns=st.session_state.부원자료.columns)
+        추가 = st.data_editor(st.session_state.새부원표, column_config=컬럼설정, use_container_width=True, key="add")
+        if st.button("명단 추가"):
+            if str(추가.iloc[0,0]).strip():
+                st.session_state.부원자료 = pd.concat([st.session_state.부원자료, 추가], ignore_index=True); 자료저장(); st.rerun()
         
-        수정 = st.data_editor(st.session_state.부원자료, use_container_width=True, num_rows="dynamic", key="edit")
+        st.subheader("명단 전체 수정")
+        수정 = st.data_editor(st.session_state.부원자료, column_config=컬럼설정, use_container_width=True, num_rows="dynamic", key="edit")
         if st.button("명단 전체 저장"): st.session_state.부원자료 = 수정.fillna(""); 자료저장(); st.rerun()
 
 with 탭5:

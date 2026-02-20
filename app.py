@@ -162,17 +162,19 @@ with 탭2:
                     elif 값들: 공통.loc[t, d] = " "
             def 색(v): return "background-color: #d3d3d3; color: #d3d3d3" if v == " " else ("background-color: #FFF2CC; color: black" if v != "" else "")
             
-            st.write("아래 표는 확인용입니다. 공통 일정은 표 밑에서 추가해 주세요.")
+            st.write("아래 표는 확인용입니다. 일정은 표 밑에서 추가해 주세요.")
             st.dataframe(공통.style.map(색), use_container_width=True)
             
-            # --- 누락되었던 공통 일정 추가 Component 복구 ---
-            st.subheader("공통 일정 추가하기")
+        # --- 1명 이상일 경우 항상 수기 입력란이 뜨도록 조건 변경 ---
+        if len(선택) >= 1:
+            st.write("---")
+            st.subheader("일정 추가하기")
             열일, 열이, 열삼 = st.columns([1, 1, 2])
             with 열일: 선택요일 = st.selectbox("요일", 요일)
             with 열이: 선택시간 = st.selectbox("시간", 시간대)
             with 열삼: 입력내용 = st.text_input("일정 내용")
             
-            if st.button("선택한 부원들에게 일정 추가"):
+            if st.button("선택한 부원(들)에게 일정 추가"):
                 if 입력내용:
                     for 부원 in 선택: 
                         st.session_state.db[부원].loc[선택시간, 선택요일] = 입력내용

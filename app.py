@@ -150,11 +150,9 @@ with 탭2:
 
         선택 = st.multiselect("확인할 부원 선택", list(st.session_state.db.keys()), default=st.session_state.temp_선택)
         
-        # 1명 선택 시 개인 시간표 표시 (누락되었던 부분 복구!)
         if len(선택) == 1:
             st.dataframe(st.session_state.db[선택[0]], use_container_width=True)
             
-        # 2명 이상 선택 시 공강 시간표 표시
         elif len(선택) >= 2:
             공통 = pd.DataFrame("", index=시간대, columns=요일)
             for t in 시간대:
@@ -163,7 +161,25 @@ with 탭2:
                     if len(값들) == len(선택) and len(set(값들)) == 1: 공통.loc[t, d] = 값들[0]
                     elif 값들: 공통.loc[t, d] = " "
             def 색(v): return "background-color: #d3d3d3; color: #d3d3d3" if v == " " else ("background-color: #FFF2CC; color: black" if v != "" else "")
+            
+            st.write("아래 표는 확인용입니다. 공통 일정은 표 밑에서 추가해 주세요.")
             st.dataframe(공통.style.map(색), use_container_width=True)
+            
+            # --- 누락되었던 공통 일정 추가 Component 복구 ---
+            st.subheader("공통 일정 추가하기")
+            열일, 열이, 열삼 = st.columns([1, 1, 2])
+            with 열일: 선택요일 = st.selectbox("요일", 요일)
+            with 열이: 선택시간 = st.selectbox("시간", 시간대)
+            with 열삼: 입력내용 = st.text_input("일정 내용")
+            
+            if st.button("선택한 부원들에게 일정 추가"):
+                if 입력내용:
+                    for 부원 in 선택: 
+                        st.session_state.db[부원].loc[선택시간, 선택요일] = 입력내용
+                    st.session_state.room_db.loc[선택시간, 선택요일] = 입력내용
+                    자료저장(); st.rerun()
+                else:
+                    st.warning("일정 내용을 적어주세요.")
     else: st.info("등록된 부원 시간표가 없습니다.")
 
 with 탭3:

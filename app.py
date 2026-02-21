@@ -172,14 +172,22 @@ with 탭2:
             with 열이: 선택시간 = st.selectbox("시간", 시간대)
             with 열삼: 입력내용 = st.text_input("일정 내용")
             
-            if st.button("선택한 부원들에게 일정 추가"):
-                if 입력내용:
-                    for 부원 in 선택: 
-                        st.session_state.db[부원].loc[선택시간, 선택요일] = 입력내용
-                    st.session_state.room_db.loc[선택시간, 선택요일] = 입력내용
+ 버튼1, 버튼2 = st.columns(2)
+            with 버튼1:
+                if st.button("선택한 부원(들)에게 일정 추가"):
+                    if 입력내용:
+                        for 부원 in 선택: 
+                            st.session_state.db[부원].loc[선택시간, 선택요일] = 입력내용
+                        st.session_state.room_db.loc[선택시간, 선택요일] = 입력내용
+                        자료저장(); st.rerun()
+                    else:
+                        st.warning("일정 내용을 적어주세요.")
+            with 버튼2:
+                if st.button("해당 시간 일정 삭제 (Clear)"):
+                    for 부원 in 선택:
+                        st.session_state.db[부원].loc[선택시간, 선택요일] = ""
+                    st.session_state.room_db.loc[선택시간, 선택요일] = ""
                     자료저장(); st.rerun()
-                else:
-                    st.warning("일정 내용을 적어주세요.")
     else: st.info("등록된 부원 시간표가 없습니다.")
 
 with 탭3:

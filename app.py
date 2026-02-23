@@ -165,14 +165,15 @@ with 탭2:
             st.write("아래 표는 확인용입니다. 공통 일정은 표 밑에서 추가해 주세요.")
             st.dataframe(공통.style.map(색), use_container_width=True)
             
-            # --- 누락되었던 공통 일정 추가 Component 복구 ---
-            st.subheader("공통 일정 추가하기")
+          if len(선택) >= 1:
+            st.write("---")
+            st.subheader("일정 일괄/개별 추가하기")
             열일, 열이, 열삼 = st.columns([1, 1, 2])
             with 열일: 선택요일 = st.selectbox("요일", 요일)
             with 열이: 선택시간 = st.selectbox("시간", 시간대)
             with 열삼: 입력내용 = st.text_input("일정 내용")
             
- 버튼1, 버튼2 = st.columns(2)
+            버튼1, 버튼2 = st.columns(2)
             with 버튼1:
                 if st.button("선택한 부원(들)에게 일정 추가"):
                     if 입력내용:
@@ -260,3 +261,4 @@ with 탭6:
     if st.button("메모 저장"):
         st.session_state.메모장 = 메모내용
         자료저장(); st.success("메모가 안전하게 저장되었습니다."); st.rerun()
+

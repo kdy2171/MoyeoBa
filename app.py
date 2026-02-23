@@ -164,8 +164,8 @@ with 탭2:
             
             st.write("아래 표는 확인용입니다. 공통 일정은 표 밑에서 추가해 주세요.")
             st.dataframe(공통.style.map(색), use_container_width=True)
-            
-          if len(선택) >= 1:
+
+        if len(선택) >= 1:
             st.write("---")
             st.subheader("일정 일괄/개별 추가하기")
             열일, 열이, 열삼 = st.columns([1, 1, 2])
@@ -261,4 +261,5 @@ with 탭6:
     if st.button("메모 저장"):
         st.session_state.메모장 = 메모내용
         자료저장(); st.success("메모가 안전하게 저장되었습니다."); st.rerun()
+
 

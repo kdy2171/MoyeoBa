@@ -34,17 +34,16 @@ def 방찾기(번호):
         return None, None
 
 def 자료저장():
-    방자료 = st.session_state.room_db.to_json()
-    부원자료 = st.session_state.부원자료.reset_index(drop=True).to_json()
-    개인db = json.dumps({이름: 표.to_json() for 이름, 표 in st.session_state.db.items()})
-
+    방자료 = st.session_state.room_db.to_json(force_ascii=False)
+    부원자료 = st.session_state.부원자료.reset_index(drop=True).to_json(force_ascii=False)
+    개인db = json.dumps({이름: 표.to_json(force_ascii=False) for 이름, 표 in st.session_state.db.items()}, ensure_ascii=False)
     설정 = json.dumps({
         "학과": st.session_state.항목_학과, "학년": st.session_state.항목_학년, "파트": st.session_state.항목_파트,
         "통학": st.session_state.항목_통학, "회비": st.session_state.항목_회비, "비밀번호": st.session_state.비밀번호,
         "팀이름": st.session_state.팀이름
-    })
-    게시판 = json.dumps(st.session_state.게시판)
-    곡정보 = json.dumps(st.session_state.곡정보)
+    }, ensure_ascii=False)
+    게시판 = json.dumps(st.session_state.게시판, ensure_ascii=False)
+    곡정보 = json.dumps(st.session_state.곡정보, ensure_ascii=False)
     메모장 = st.session_state.메모장
     
     새데이터 = [st.session_state["방번호"], st.session_state["팀이름"], 방자료, 부원자료, 개인db, 설정, 게시판, 곡정보, 메모장]

@@ -164,10 +164,10 @@ with 탭2:
                     elif 값들: 공통.loc[t, d] = " "
             def 색(v): return "background-color: #d3d3d3; color: #d3d3d3" if v == " " else ("background-color: #FFF2CC; color: black" if v != "" else "")
             
-            st.write("아래 표는 확인용입니다. 공통 일정은 표 밑에서 추가해 주세요.")
+            st.write("아래 표는 확인용입니다. 일정은 표 밑에서 추가해 주세요.")
             st.dataframe(공통.style.map(색), use_container_width=True)
-
-                if len(선택) >= 1:
+            
+        if len(선택) >= 1:
             st.write("---")
             st.subheader("일정 일괄/개별 추가하기")
             열일, 열이, 열삼 = st.columns([1, 1, 2])
@@ -191,7 +191,8 @@ with 탭2:
                         st.session_state.db[부원].loc[선택시간, 선택요일] = ""
                     st.session_state.room_db.loc[선택시간, 선택요일] = ""
                     자료저장(); st.rerun()
-    else: st.info("등록된 부원 시간표가 없습니다.")
+    else: 
+        st.info("등록된 부원 시간표가 없습니다.")
 
 with 탭3:
     st.header("부원 개인 시간표 등록")

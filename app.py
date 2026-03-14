@@ -50,10 +50,11 @@ def 자료저장():
     새데이터 = [st.session_state["방번호"], st.session_state["팀이름"], 방자료, 부원자료, 개인db, 설정, 게시판, 곡정보, 메모장]
     줄번호, _ = 방찾기(st.session_state["방번호"])
     
-        if 줄번호:
+    if 줄번호:
         시트.update(values=[새데이터], range_name=f"A{줄번호}:I{줄번호}", value_input_option="RAW")
     else:
         시트.append_row(새데이터, value_input_option="RAW")
+
 
 # 4. 입장 및 세션 초기화
 if "방번호" not in st.session_state: st.session_state["방번호"] = ""

@@ -35,8 +35,9 @@ def 방찾기(번호):
 
 def 자료저장():
     방자료 = st.session_state.room_db.to_json()
-    부원자료 = st.session_state.부원자료.to_json()
+    부원자료 = st.session_state.부원자료.reset_index(drop=True).to_json()
     개인db = json.dumps({이름: 표.to_json() for 이름, 표 in st.session_state.db.items()})
+
     설정 = json.dumps({
         "학과": st.session_state.항목_학과, "학년": st.session_state.항목_학년, "파트": st.session_state.항목_파트,
         "통학": st.session_state.항목_통학, "회비": st.session_state.항목_회비, "비밀번호": st.session_state.비밀번호,
@@ -165,7 +166,7 @@ with 탭2:
             st.write("아래 표는 확인용입니다. 공통 일정은 표 밑에서 추가해 주세요.")
             st.dataframe(공통.style.map(색), use_container_width=True)
 
-        if len(선택) >= 1:
+                if len(선택) >= 1:
             st.write("---")
             st.subheader("일정 일괄/개별 추가하기")
             열일, 열이, 열삼 = st.columns([1, 1, 2])

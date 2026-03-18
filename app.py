@@ -200,8 +200,18 @@ with 탭3:
     입력명 = st.text_input("새 이름") if 선택명 == "새로 입력" else 선택명
     기존 = st.session_state.db[입력명].copy() if 입력명 in st.session_state.db else pd.DataFrame("", index=시간대, columns=요일)
     새표 = st.data_editor(기존, use_container_width=True, key=f"s_{st.session_state.새로고침번호}")
-    if st.button("개인 시간표 저장"):
-        if 입력명: st.session_state.db[입력명] = 새표.fillna(""); 자료저장(); st.rerun()
+    저장버튼, 삭제버튼 = st.columns(2)
+    with 저장버튼:
+        if st.button("개인 시간표 저장 (Save)"):
+            if 입력명: 
+                st.session_state.db[입력명] = 새표.fillna("")
+                자료저장(); st.rerun()
+    with 삭제버튼:
+        if 선택명 != "새로 입력" and st.button(f"'{선택명}' 부원 정보 삭제 (Delete)"):
+            if 선택명 in st.session_state.db:
+                del st.session_state.db[선택명]
+            st.session_state.부원자료 = st.session_state.부원자료[st.session_state.부원자료['이름'] != 선택명]
+            자료저장(); st.rerun()
 
 with 탭4:
     st.header("부원 정보 관리")

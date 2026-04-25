@@ -219,8 +219,13 @@ with 탭3:
 with 탭4:
     st.header("부원 정보 관리")
     if not st.session_state.인증완료:
-        if st.text_input("비밀번호", type="password") == st.session_state.비밀번호:
-            if st.button("인증"): st.session_state.인증완료 = True; st.rerun()
+        입력비번 = st.text_input("비밀번호", type="password")
+        if st.button("인증"):
+            if 입력비번 == st.session_state.비밀번호:
+                st.session_state.인증완료 = True
+                st.rerun()
+            else:
+                st.error("비밀번호가 틀렸습니다.")
     else:
         if st.button("잠금"): st.session_state.인증완료 = False; st.rerun()
         with st.expander("⚙️ 설정"):

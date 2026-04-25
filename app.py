@@ -69,10 +69,13 @@ if st.session_state["방번호"] == "":
             if 줄번호:
                 st.session_state["방번호"] = 데이터[0]
                 st.session_state["팀이름"] = 데이터[1]
-                st.session_state.room_db = pd.read_json(데이터[2]).fillna("")
-                st.session_state.부원자료 = pd.read_json(데이터[3]).fillna("")
-                st.session_state.db = {n: pd.read_json(p).fillna("") for n, p in json.loads(데이터[4]).items()}
-                s = json.loads(데이터[5])
+                import io
+                st.session_state.room_db = pd.read_json(io.StringIO(데이터[2])).fillna("") if 데이터[2] else pd.DataFrame("", index=시간대, columns=요일)
+                st.session_state.부원자료 = pd.read_json(io.StringIO(데이터[3])).fillna("") if 데이터[3] else pd.DataFrame(columns=부원항목)
+                
+                임시db = json.loads(데이터[4]) if 데이터[4] else {}
+                st.session_state.db = {n: pd.read_json(io.StringIO(p)).fillna("") for n, p in 임시db.items() if p}
+                s = json.loads(데이터[5]) if 데이터[5] else {}
                 st.session_state.항목_학과 = s.get("학과", ["물리치료학과", "기타학과"])
                 st.session_state.항목_학년 = s.get("학년", ["1", "2", "3", "4"])
                 st.session_state.항목_파트 = s.get("파트", ["보컬", "보컬2", "기타1", "기타2", "통기타", "베이스", "드럼", "키보드", "기타악기"])

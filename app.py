@@ -47,11 +47,11 @@ def 자료저장():
     메모장 = st.session_state.메모장
     
     새데이터 = [st.session_state["방번호"], st.session_state["팀이름"], 방자료, 부원자료, 개인db, 설정, 게시판, 곡정보, 메모장]
-    줄번호, _ = 방찾기(st.session_state["방번호"])
+줄번호, _ = 방찾기(st.session_state["방번호"])
     
-    if 줄번호:
-        시트.update(values=[새데이터], range_name=f"A{줄번호}:I{줄번호}", value_input_option="RAW")
-    else:
+if 줄번호:
+        시트.update(range_name=f"A{줄번호}", values=[새데이터])
+else:
         시트.append_row(새데이터, value_input_option="RAW")
 
 
@@ -138,9 +138,10 @@ with 탭2:
                 sc1, sc2 = st.columns([4, 1])
                 sc1.write(f"**{곡}**: {', '.join(멤버들)}")
                 if sc2.button("삭제", key=f"del_{곡}"):
-                    del st.session_state.곡정보[곡]; 자료저장(); st.rerun()
-
-    st.divider()
+                    if 곡 in st.session_state.곡정보:
+                        del st.session_state.곡정보[곡]
+                        자료저장()
+                    st.rerun()
 
     if st.session_state.db:
         st.subheader("시간표 확인")
@@ -148,7 +149,7 @@ with 탭2:
             st.write("곡 이름을 누르면 멤버들이 자동으로 선택됩니다:")
             btn_cols = st.columns(min(len(st.session_state.곡정보), 5))
             for i, 곡 in enumerate(st.session_state.곡정보.keys()):
-                if btn_cols[i % 5].button(곡, key=f"btn_{곡}"):
+                if btn_cols = st.columns(max(min(len(st.session_state.곡정보), 5), 1))
                     st.session_state.temp_선택 = st.session_state.곡정보[곡]
                     st.rerun()
 

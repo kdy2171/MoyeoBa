@@ -47,11 +47,11 @@ def 자료저장():
     메모장 = st.session_state.메모장
     
     새데이터 = [st.session_state["방번호"], st.session_state["팀이름"], 방자료, 부원자료, 개인db, 설정, 게시판, 곡정보, 메모장]
-줄번호, _ = 방찾기(st.session_state["방번호"])
+    줄번호, _ = 방찾기(st.session_state["방번호"])
     
-if 줄번호:
+    if 줄번호:
         시트.update(range_name=f"A{줄번호}", values=[새데이터])
-else:
+    else:
         시트.append_row(새데이터, value_input_option="RAW")
 
 
@@ -147,9 +147,9 @@ with 탭2:
         st.subheader("시간표 확인")
         if st.session_state.곡정보:
             st.write("곡 이름을 누르면 멤버들이 자동으로 선택됩니다:")
-            btn_cols = st.columns(min(len(st.session_state.곡정보), 5))
+            btn_cols = st.columns(max(min(len(st.session_state.곡정보), 5), 1))
             for i, 곡 in enumerate(st.session_state.곡정보.keys()):
-                if btn_cols = st.columns(max(min(len(st.session_state.곡정보), 5), 1))
+                if btn_cols[i % 5].button(곡, key=f"btn_{곡}"):
                     st.session_state.temp_선택 = st.session_state.곡정보[곡]
                     st.rerun()
 
@@ -282,5 +282,3 @@ with 탭6:
     if st.button("메모 저장"):
         st.session_state.메모장 = 메모내용
         자료저장(); st.success("메모가 안전하게 저장되었습니다."); st.rerun()
-
-

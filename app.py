@@ -50,7 +50,7 @@ def 자료저장():
     줄번호, _ = 방찾기(st.session_state["방번호"])
     
     if 줄번호:
-        시트.update(range_name=f"A{줄번호}", values=[새데이터])
+        시트.update(values=[새데이터], range_name=f"A{줄번호}:I{줄번호}", value_input_option="RAW")
     else:
         시트.append_row(새데이터, value_input_option="RAW")
 
@@ -207,16 +207,22 @@ with 탭3:
     저장버튼, 삭제버튼 = st.columns(2)
     with 저장버튼:
         if st.button("개인 시간표 저장 (Save)"):
-            if 입력명: 
+            if 입력명 and 입력명 != "새로 입력": 
                 st.session_state.db[입력명] = 새표.fillna("")
                 자료저장(); st.rerun()
+            else:
+                st.warning("정확한 부원 이름을 입력한 후 저장해주세요.")
     with 삭제버튼:
         if 선택명 != "새로 입력" and st.button(f"'{선택명}' 부원 정보 삭제 (Delete)"):
             if 선택명 in st.session_state.db:
                 del st.session_state.db[선택명]
             st.session_state.부원자료 = st.session_state.부원자료[st.session_state.부원자료['이름'] != 선택명]
+            
+            for 곡, 멤버들 in st.session_state.곡정보.items():
+                if 선택명 in 멤버들:
+                    멤버들.remove(선택명)
+                    
             자료저장(); st.rerun()
-
 with 탭4:
     st.header("부원 정보 관리")
     if not st.session_state.인증완료:

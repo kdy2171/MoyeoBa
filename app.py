@@ -309,6 +309,14 @@ with 탭7:
         
         if st.session_state.get("current_chat_user"):
             st.write(f"현재 접속 계정: **{st.session_state.current_chat_user}**")
+            
+            # 수동 새로고침 버튼 (페이지 이탈 없이 채팅만 갱신)
+            if st.button("🔄 새 메시지 확인 (새로고침)"):
+                줄번호, 데이터 = 방찾기(st.session_state["방번호"])
+                if 줄번호 and len(데이터) > 9:
+                    st.session_state.채팅 = json.loads(데이터[9]) if 데이터[9] else {}
+                st.rerun()
+            
             st.divider()
             
             if 곡선택 not in st.session_state.채팅:
@@ -320,6 +328,14 @@ with 탭7:
                 
             메시지 = st.chat_input("메시지를 입력하세요.")
             if 메시지:
+                # 데이터 덮어쓰기 방지를 위해 저장 직전 최신 DB 동기화
+                줄번호, 데이터 = 방찾기(st.session_state["방번호"])
+                if 줄번호 and len(데이터) > 9:
+                    st.session_state.채팅 = json.loads(데이터[9]) if 데이터[9] else {}
+                
+                if 곡선택 not in st.session_state.채팅:
+                    st.session_state.채팅[곡선택] = []
+                    
                 st.session_state.채팅[곡선택].append({
                     "작성자": st.session_state.current_chat_user,
                     "시간": datetime.now().strftime("%Y-%m-%d %H:%M"),

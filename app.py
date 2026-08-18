@@ -45,12 +45,13 @@ def 자료저장():
     게시판 = json.dumps(st.session_state.게시판, ensure_ascii=False)
     곡정보 = json.dumps(st.session_state.곡정보, ensure_ascii=False)
     메모장 = st.session_state.메모장
+    채팅 = json.dumps(st.session_state.채팅, ensure_ascii=False)
     
-    새데이터 = [st.session_state["방번호"], st.session_state["팀이름"], 방자료, 부원자료, 개인db, 설정, 게시판, 곡정보, 메모장]
+    새데이터 = [st.session_state["방번호"], st.session_state["팀이름"], 방자료, 부원자료, 개인db, 설정, 게시판, 곡정보, 메모장, 채팅]
     줄번호, _ = 방찾기(st.session_state["방번호"])
     
     if 줄번호:
-        시트.update(values=[새데이터], range_name=f"A{줄번호}:I{줄번호}", value_input_option="RAW")
+        시트.update(values=[새데이터], range_name=f"A{줄번호}:J{줄번호}", value_input_option="RAW")
     else:
         시트.append_row(새데이터, value_input_option="RAW")
 
@@ -83,6 +84,7 @@ if st.session_state["방번호"] == "":
                 st.session_state.게시판 = json.loads(데이터[6]) if len(데이터) > 6 else []
                 st.session_state.곡정보 = json.loads(데이터[7]) if len(데이터) > 7 else {}
                 st.session_state.메모장 = 데이터[8] if len(데이터) > 8 else ""
+                st.session_state.채팅 = json.loads(데이터[9]) if len(데이터) > 9 else {}
                 
                 st.session_state.인증완료, st.session_state.새로고침번호 = False, 0
                 st.session_state.temp_선택 = [] 
@@ -99,7 +101,7 @@ if st.session_state["방번호"] == "":
                     "방번호": 새번호, "팀이름": 새이름, "db": {}, 
                     "room_db": pd.DataFrame("", index=시간대, columns=요일), 
                     "부원자료": pd.DataFrame(columns=부원항목), 
-                    "게시판": [], "곡정보": {}, "메모장": "", "temp_선택": [],
+                    "게시판": [], "곡정보": {}, "메모장": "", "채팅": {}, "temp_선택": [],
                     "항목_학과": ["물리치료학과", "기타학과"], "항목_학년": ["1", "2", "3", "4"], 
                     "항목_파트": ["보컬", "보컬2", "기타1", "기타2", "통기타", "베이스", "드럼", "키보드", "기타악기"], 
                     "항목_통학": ["o", "x"], "항목_회비": ["o", "x"], "비밀번호": "0000", 
@@ -112,7 +114,7 @@ if st.session_state["방번호"] == "":
 st.markdown(f"<h1>통합 관리 화면 <span style='font-size: 0.5em; background-color: #f0f2f6; padding: 5px 10px; border-radius: 10px; color: black;'>{st.session_state['팀이름']}</span></h1>", unsafe_allow_html=True)
 if st.button("로그아웃"): st.session_state["방번호"] = ""; st.rerun()
 
-탭1, 탭2, 탭3, 탭4, 탭5, 탭6 = st.tabs(["동아리방 관리", "개인 시간표 및 곡 관리", "시간표 등록", "부원 정보 관리", "공지 게시판", "메모장"])
+탭1, 탭2, 탭3, 탭4, 탭5, 탭6, 탭7 = st.tabs(["동아리방 관리", "개인 시간표 및 곡 관리", "시간표 등록", "부원 정보 관리", "공지 게시판", "메모장", "팀별 채팅방"])
 
 with 탭1:
     st.header("동아리방 시간표 관리")
@@ -288,3 +290,40 @@ with 탭6:
     if st.button("메모 저장"):
         st.session_state.메모장 = 메모내용
         자료저장(); st.success("메모가 안전하게 저장되었습니다."); st.rerun()
+with 탭7:
+    st.header("💬 곡(팀)별 채팅방")
+    if not st.session_state.곡정보:
+        st.info("곡별 참여 멤버가 설정되지 않았습니다. '개인 시간표 및 곡 관리' 탭에서 먼저 설정하세요.")
+    else:
+        곡선택 = st.selectbox("채팅방 선택", list(st.session_state.곡정보.keys()))
+        
+        c1, c2, c3 = st.columns([2, 2, 1])
+        입력_이름 = c1.text_input("채팅에 사용할 이름")
+        입력_포지션 = c2.selectbox("포지션 선택", st.session_state.항목_파트)
+        
+        if c3.button("채팅방 입장"):
+            if 입력_이름:
+                st.session_state.current_chat_user = f"{입력_이름}({입력_포지션})"
+            else:
+                st.warning("이름을 입력하세요.")
+        
+        if st.session_state.get("current_chat_user"):
+            st.write(f"현재 접속 계정: **{st.session_state.current_chat_user}**")
+            st.divider()
+            
+            if 곡선택 not in st.session_state.채팅:
+                st.session_state.채팅[곡선택] = []
+                
+            채팅영역 = st.container(height=400)
+            for 챗 in st.session_state.채팅[곡선택]:
+                채팅영역.markdown(f"**{챗['작성자']}** <span style='font-size:0.8em;color:gray;'>{챗['시간']}</span><br>{챗['메시지']}", unsafe_allow_html=True)
+                
+            메시지 = st.chat_input("메시지를 입력하세요.")
+            if 메시지:
+                st.session_state.채팅[곡선택].append({
+                    "작성자": st.session_state.current_chat_user,
+                    "시간": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "메시지": 메시지
+                })
+                자료저장()
+                st.rerun()

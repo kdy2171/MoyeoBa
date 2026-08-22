@@ -4,6 +4,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import json
 from datetime import datetime
+import io
 
 # 1. 필수 기본 설정
 st.set_page_config(page_title="시간표", layout="wide")
@@ -70,12 +71,23 @@ if st.session_state["방번호"] == "":
             if 줄번호:
                 st.session_state["방번호"] = 데이터[0]
                 st.session_state["팀이름"] = 데이터[1]
-                import io
-                st.session_state.room_db = pd.read_json(io.StringIO(데이터[2])).fillna("") if 데이터[2] else pd.DataFrame("", index=시간대, columns=요일)
+                
+                # DataFrame reindex 추가: 빈 데이터로 저장되어 표 구조가 무너지는 현상 방지
+                if 데이터[2]:
+                    temp_df = pd.read_json(io.StringIO(데이터[2]))
+                    st.session_state.room_db = temp_df.reindex(index=시간대, columns=요일).fillna("")
+                else:
+                    st.session_state.room_db = pd.DataFrame("", index=시간대, columns=요일)
+                
                 st.session_state.부원자료 = pd.read_json(io.StringIO(데이터[3])).fillna("") if 데이터[3] else pd.DataFrame(columns=부원항목)
                 
                 임시db = json.loads(데이터[4]) if 데이터[4] else {}
-                st.session_state.db = {n: pd.read_json(io.StringIO(p)).fillna("") for n, p in 임시db.items() if p}
+                st.session_state.db = {}
+                for n, p in 임시db.items():
+                    if p:
+                        temp_df = pd.read_json(io.StringIO(p))
+                        st.session_state.db[n] = temp_df.reindex(index=시간대, columns=요일).fillna("")
+                
                 s = json.loads(데이터[5]) if 데이터[5] else {}
                 st.session_state.항목_학과 = s.get("학과", ["물리치료학과", "기타학과"])
                 st.session_state.항목_학년 = s.get("학년", ["1", "2", "3", "4"])
@@ -119,7 +131,11 @@ if st.button("로그아웃"): st.session_state["방번호"] = ""; st.rerun()
 with 탭1:
     st.header("동아리방 시간표 관리")
     새방 = st.data_editor(st.session_state.room_db, use_container_width=True, key=f"r_{st.session_state.새로고침번호}")
-    if st.button("방 시간표 저장"): st.session_state.room_db = 새방.fillna(""); 자료저장(); st.rerun()
+    if st.button("방 시간표 저장"): 
+        st.session_state.room_db = 새방.fillna("")
+        st.session_state.새로고침번호 += 1 # 캐시 강제 무효화
+        자료저장()
+        st.rerun()
 
 with 탭2:
     st.header("부원 시간표 및 곡별 멤버 확인")
@@ -187,6 +203,7 @@ with 탭2:
                         for 부원 in 선택: 
                             st.session_state.db[부원].loc[선택시간, 선택요일] = 입력내용
                         st.session_state.room_db.loc[선택시간, 선택요일] = 입력내용
+                        st.session_state.새로고침번호 += 1 # 캐시 강제 무효화
                         자료저장(); st.rerun()
                     else:
                         st.warning("일정 내용을 적어주세요.")
@@ -195,6 +212,7 @@ with 탭2:
                     for 부원 in 선택:
                         st.session_state.db[부원].loc[선택시간, 선택요일] = ""
                     st.session_state.room_db.loc[선택시간, 선택요일] = ""
+                    st.session_state.새로고침번호 += 1 # 캐시 강제 무효화
                     자료저장(); st.rerun()
     else: 
         st.info("등록된 부원 시간표가 없습니다.")
@@ -211,7 +229,9 @@ with 탭3:
         if st.button("개인 시간표 저장 (Save)"):
             if 입력명 and 입력명 != "새로 입력": 
                 st.session_state.db[입력명] = 새표.fillna("")
-                자료저장(); st.rerun()
+                st.session_state.새로고침번호 += 1 # 캐시 강제 무효화
+                자료저장()
+                st.rerun()
             else:
                 st.warning("정확한 부원 이름을 입력한 후 저장해주세요.")
     with 삭제버튼:
@@ -224,6 +244,7 @@ with 탭3:
                 if 선택명 in 멤버들:
                     멤버들.remove(선택명)
                     
+            st.session_state.새로고침번호 += 1 # 캐시 강제 무효화
             자료저장(); st.rerun()
 with 탭4:
     st.header("부원 정보 관리")
@@ -290,6 +311,7 @@ with 탭6:
     if st.button("메모 저장"):
         st.session_state.메모장 = 메모내용
         자료저장(); st.success("메모가 안전하게 저장되었습니다."); st.rerun()
+
 with 탭7:
     st.header("💬 곡(팀)별 채팅방")
     if not st.session_state.곡정보:

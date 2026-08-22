@@ -3,6 +3,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import json
+import io
 from datetime import datetime
 
 # 1. 필수 기본 설정
@@ -10,7 +11,8 @@ st.set_page_config(page_title="동아리 통합 관리", layout="wide")
 
 시간대 = [f"{i}시({i-8}교시)" for i in range(9, 24)]
 요일 = ["월", "화", "수", "목", "금"]
-부원항목 = ["이름", "학번", "학과", "학년", "전화번호", "파트", "통학여부", "회비여부", "개요1", "개요2", "개요3", "개요4"]
+# 사용자 요청: 개요 항목을 2개로 축소
+부원항목 = ["이름", "학번", "학과", "학년", "전화번호", "파트", "통학여부", "회비여부", "개요1", "개요2"]
 
 # 2. 구글 시트 연결 설정
 @st.cache_resource
@@ -22,14 +24,40 @@ def 구글문서연결():
 
 시트 = 구글문서연결()
 
-# 3. 데이터 스키마 및 기본 구조 방어 엔진
+# 3. 데이터 스키마 및 하위호환 복원 파서
 def 빈_시간표():
     return pd.DataFrame("", index=시간대, columns=요일)
 
-def 시간표_복원(데이터_딕셔너리):
-    if not isinstance(데이터_딕셔너리, dict):
+def 시간표_복원(raw_val):
+    if not raw_val or not str(raw_val).strip():
         return 빈_시간표()
-    return pd.DataFrame.from_dict(데이터_딕셔너리).reindex(index=시간대, columns=요일).fillna("")
+    try:
+        parsed = json.loads(raw_val) if isinstance(raw_val, str) else raw_val
+        if isinstance(parsed, dict):
+            return pd.DataFrame.from_dict(parsed).reindex(index=시간대, columns=요일).fillna("")
+        elif isinstance(parsed, list):
+            return pd.DataFrame(parsed).reindex(index=시간대, columns=요일).fillna("")
+    except Exception:
+        pass
+    try:
+        return pd.read_json(io.StringIO(raw_val)).reindex(index=시간대, columns=요일).fillna("")
+    except Exception:
+        return 빈_시간표()
+
+def 부원자료_복원(raw_val):
+    if not raw_val or not str(raw_val).strip():
+        return pd.DataFrame(columns=부원항목)
+    try:
+        parsed = json.loads(raw_val) if isinstance(raw_val, str) else raw_val
+        if isinstance(parsed, list):
+            df = pd.DataFrame(parsed)
+        elif isinstance(parsed, dict):
+            df = pd.DataFrame.from_dict(parsed)
+        else:
+            df = pd.read_json(io.StringIO(raw_val))
+        return df.reindex(columns=부원항목).fillna("")
+    except Exception:
+        return pd.DataFrame(columns=부원항목)
 
 def 기본_방_상태(방번호="", 팀이름=""):
     return {
@@ -69,7 +97,7 @@ def 데이터_동기화(방번호):
     
     기본 = 기본_방_상태(데이터[0], 데이터[1] if len(데이터) > 1 else "")
     
-    def 안전파싱(idx, fallback):
+    def 안전JSON파싱(idx, fallback):
         if len(데이터) > idx and 데이터[idx].strip():
             try:
                 return json.loads(데이터[idx])
@@ -77,24 +105,21 @@ def 데이터_동기화(방번호):
                 return fallback
         return fallback
 
-    기본["room_db"] = 시간표_복원(안전파싱(2, {}))
+    기본["room_db"] = 시간표_복원(데이터[2] if len(데이터) > 2 else "")
+    기본["부원자료"] = 부원자료_복원(데이터[3] if len(데이터) > 3 else "")
     
-    부원_목록 = 안전파싱(3, [])
-    if isinstance(부원_목록, list):
-        기본["부원자료"] = pd.DataFrame(부원_목록).reindex(columns=부원항목).fillna("")
+    개인시간표_원본 = 안전JSON파싱(4, {})
+    if isinstance(개인시간표_원본, dict):
+        기본["db"] = {n: 시간표_복원(p) for n, p in 개인시간표_원본.items()}
     
-    개인시간표_딕셔너리 = 안전파싱(4, {})
-    if isinstance(개인시간표_딕셔너리, dict):
-        기본["db"] = {n: 시간표_복원(p) for n, p in 개인시간표_딕셔너리.items() if isinstance(p, dict)}
-    
-    불러온설정 = 안전파싱(5, {})
+    불러온설정 = 안전JSON파싱(5, {})
     if isinstance(불러온설정, dict):
         기본["설정"].update(불러온설정)
         
-    기본["게시판"] = 안전파싱(6, [])
-    기본["곡정보"] = 안전파싱(7, {})
+    기본["게시판"] = 안전JSON파싱(6, [])
+    기본["곡정보"] = 안전JSON파싱(7, {})
     기본["메모장"] = 데이터[8] if len(데이터) > 8 else ""
-    기본["채팅"] = 안전파싱(9, {})
+    기본["채팅"] = 안전JSON파싱(9, {})
 
     st.session_state.방정보 = 기본
     return True
@@ -164,7 +189,7 @@ if st.button("로그아웃"):
     st.session_state.방정보 = None
     st.rerun()
 
-탭1, 탭2, 탭3, 탭4, 탭5, 탭6, 탭7 = st.tabs(["동아리방 관리", "개인 시간표 및 곡 관리", "시간표 등록", "부원 정보 관리", "공지 게시판", "메모장", "팀별 채팅방"])
+탭1, 탭2, 탭3, 탭4, 탭5, 탭6, 탭7 = st.tabs(["동아리방 관리", "개인 시간표 및 곡 관리", "부원 개인 시간표 등록", "부원 정보 관리", "공지 게시판", "메모장", "팀별 채팅방"])
 
 with 탭1:
     st.header("동아리방 시간표 관리")
@@ -276,38 +301,58 @@ with 탭2:
 
 with 탭3:
     st.header("부원 개인 시간표 등록")
-    이름목록 = ["새로 입력"] + sorted(list(상태["db"].keys()))
-    선택명 = st.selectbox("부원 선택", 이름목록)
+    st.caption("💡 엑셀 표처럼 모든 시간대를 한눈에 보면서 칸을 직접 클릭해 수기로 작성하세요.")
     
-    입력명 = st.text_input("새 이름") if 선택명 == "새로 입력" else 선택명
+    부원목록_명단 = 상태["부원자료"]["이름"].tolist() if "이름" in 상태["부원자료"].columns else []
+    부원목록_db = list(상태["db"].keys())
+    전체_부원목록 = sorted(list(set(부원목록_명단 + 부원목록_db)))
+    
+    이름목록 = ["새로 입력"] + 전체_부원목록
+    선택명 = st.selectbox("부원 선택", 이름목록, key="p_select_member")
+    
+    if 선택명 == "새로 입력":
+        입력명 = st.text_input("새 부원 이름 입력", key="p_new_name").strip()
+    else:
+        입력명 = 선택명
+
     if 입력명:
-        if 입력명 in 상태["db"]:
-            st.dataframe(상태["db"][입력명], use_container_width=True)
-        else:
-            st.info(f"'{입력명}' 부원의 시간표가 비어 있습니다. 아래에서 일정을 등록하십시오.")
-            
-        st.subheader("개별 일정 등록")
-        fc1, fc2, fc3 = st.columns([1, 1, 2])
-        개인요일 = fc1.selectbox("요일 선택", 요일, key="p_day")
-        개인시간 = fc2.selectbox("시간 선택", 시간대, key="p_time")
-        개인내용 = fc3.text_input("내용 (비우고 저장 시 삭제)", key="p_val")
+        기존_표 = 상태["db"].get(입력명, 빈_시간표()).copy()
         
-        sb1, sb2 = st.columns(2)
-        with sb1:
-            if st.button("개인 일정 저장"):
+        st.subheader(f"📅 '{입력명}' 님의 시간표 표 (직접 수기 입력)")
+        
+        # 엑셀처럼 수기로 직접 다 볼 수 있는 data_editor
+        편집_표 = st.data_editor(
+            기존_표,
+            use_container_width=True,
+            key=f"editor_tab3_{입력명}"
+        )
+        
+        c_save, c_del = st.columns(2)
+        with c_save:
+            if st.button("개인 시간표 저장 (Save)", key="btn_save_p_table"):
                 데이터_동기화(상태["방번호"])
-                if 입력명 not in st.session_state.방정보["db"]:
-                    st.session_state.방정보["db"][입력명] = 빈_시간표()
-                st.session_state.방정보["db"][입력명].loc[개인시간, 개인요일] = 개인내용
+                st.session_state.방정보["db"][입력명] = 편집_표.fillna("")
+                
+                # 부원 명단에 없는 경우 명단에도 추가
+                if "이름" in st.session_state.방정보["부원자료"].columns:
+                    if 입력명 not in st.session_state.방정보["부원자료"]["이름"].values:
+                        새_부원_행 = {col: "" for col in 부원항목}
+                        새_부원_행["이름"] = 입력명
+                        st.session_state.방정보["부원자료"] = pd.concat(
+                            [st.session_state.방정보["부원자료"], pd.DataFrame([새_부원_행])], 
+                            ignore_index=True
+                        )
                 자료저장()
-                st.success("저장 완료")
+                st.success(f"'{입력명}' 님의 시간표가 성공적으로 저장되었습니다.")
                 st.rerun()
-        with sb2:
-            if 선택명 != "새로 입력" and st.button(f"'{선택명}' 시간표 데이터 삭제"):
+                
+        with c_del:
+            if 선택명 != "새로 입력" and st.button(f"'{선택명}' 시간표 삭제", type="primary", key="btn_del_p_table"):
                 데이터_동기화(상태["방번호"])
                 if 선택명 in st.session_state.방정보["db"]:
                     del st.session_state.방정보["db"][선택명]
                 자료저장()
+                st.success(f"'{선택명}' 님의 시간표가 삭제되었습니다.")
                 st.rerun()
 
 with 탭4:
@@ -325,10 +370,10 @@ with 탭4:
             st.session_state.인증완료 = False
             st.rerun()
             
-        with st.expander("⚙️ 항목 설정"):
-            현재항목 = 상태["부원자료"].columns[-4:] if len(상태["부원자료"].columns) >= 4 else 부원항목[-4:]
-            c1, c2, c3, c4 = st.columns(4)
-            새이름 = [c1.text_input("개요1 명칭", 현재항목[0]), c2.text_input("개요2 명칭", 현재항목[1]), c3.text_input("개요3 명칭", 현재항목[2]), c4.text_input("개요4 명칭", 현재항목[3])]
+        with st.expander("⚙️ 항목 및 선택 드롭다운 설정"):
+            현재항목 = 상태["부원자료"].columns[-2:] if len(상태["부원자료"].columns) >= 2 else 부원항목[-2:]
+            c1, c2 = st.columns(2)
+            새이름 = [c1.text_input("개요1 명칭", 현재항목[0]), c2.text_input("개요2 명칭", 현재항목[1])]
             if st.button("개요 명칭 변경"):
                 데이터_동기화(상태["방번호"])
                 st.session_state.방정보["부원자료"] = st.session_state.방정보["부원자료"].rename(columns=dict(zip(현재항목, 새이름)))
@@ -346,78 +391,64 @@ with 탭4:
                 자료저장()
                 st.rerun()
 
-        st.subheader("부원 명단 관리")
-        부원리스트 = 상태["부원자료"]["이름"].tolist() if "이름" in 상태["부원자료"].columns else []
-        선택_편집 = st.selectbox("부원 선택", ["새 부원 추가"] + 부원리스트)
+        st.subheader("📋 부원 명단 (엑셀처럼 한 줄씩 직접 편집)")
+        st.caption("💡 각 행은 부원 1명의 정보입니다. 셀을 직접 수정하고 하단 저장 버튼을 누르세요.")
         
-        기존값 = {col: "" for col in 부원항목}
-        if 선택_편집 != "새 부원 추가" and "이름" in 상태["부원자료"].columns:
-            매칭 = 상태["부원자료"][상태["부원자료"]["이름"] == 선택_편집]
-            if not 매칭.empty:
-                기존값 = 매칭.iloc[0].to_dict()
+        컬럼_설정 = {
+            "학과": st.column_config.SelectboxColumn("학과", options=상태["설정"]["학과"]),
+            "학년": st.column_config.SelectboxColumn("학년", options=상태["설정"]["학년"]),
+            "파트": st.column_config.SelectboxColumn("파트", options=상태["설정"]["파트"]),
+            "통학여부": st.column_config.SelectboxColumn("통학여부", options=상태["설정"]["통학"]),
+            "회비여부": st.column_config.SelectboxColumn("회비여부", options=상태["설정"]["회비"]),
+        }
+        
+        부원_df = 상태["부원자료"].reindex(columns=부원항목).fillna("")
+        
+        수정된_부원_df = st.data_editor(
+            부원_df,
+            column_config=컬럼_설정,
+            use_container_width=True,
+            num_rows="dynamic",
+            key="editor_buwon_list"
+        )
+        
+        if st.button("부원 명단 전체 저장", key="btn_save_buwon_all"):
+            데이터_동기화(상태["방번호"])
+            st.session_state.방정보["부원자료"] = 수정된_부원_df.fillna("")
+            자료저장()
+            st.success("부원 명단이 저장되었습니다.")
+            st.rerun()
 
-        c1, c2, c3, c4 = st.columns(4)
-        입력_이름 = c1.text_input("이름 (필수)", 기존값.get("이름", ""))
-        입력_학번 = c2.text_input("학번", 기존값.get("학번", ""))
-        
-        학과_idx = 상태["설정"]["학과"].index(기존값["학과"]) if 기존값.get("학과") in 상태["설정"]["학과"] else 0
-        입력_학과 = c3.selectbox("학과", 상태["설정"]["학과"], index=학과_idx)
-        
-        학년_idx = 상태["설정"]["학년"].index(기존값["학년"]) if 기존값.get("학년") in 상태["설정"]["학년"] else 0
-        입력_학년 = c4.selectbox("학년", 상태["설정"]["학년"], index=학년_idx)
-
-        c5, c6, c7, c8 = st.columns(4)
-        입력_전화 = c5.text_input("전화번호", 기존값.get("전화번호", ""))
-        
-        파트_idx = 상태["설정"]["파트"].index(기존값["파트"]) if 기존값.get("파트") in 상태["설정"]["파트"] else 0
-        입력_파트 = c6.selectbox("파트", 상태["설정"]["파트"], index=파트_idx)
-        
-        통학_idx = 상태["설정"]["통학"].index(기존값["통학여부"]) if 기존값.get("통학여부") in 상태["설정"]["통학"] else 0
-        입력_통학 = c7.selectbox("통학여부", 상태["설정"]["통학"], index=통학_idx)
-        
-        회비_idx = 상태["설정"]["회비"].index(기존값["회비여부"]) if 기존값.get("회비여부") in 상태["설정"]["회비"] else 0
-        입력_회비 = c8.selectbox("회비여부", 상태["설정"]["회비"], index=회비_idx)
-
-        c9, c10, c11, c12 = st.columns(4)
-        항목명 = 상태["부원자료"].columns[-4:] if len(상태["부원자료"].columns) >= 4 else 부원항목[-4:]
-        개요값 = [c9.text_input(항목명[0], 기존값.get(항목명[0], "")), c10.text_input(항목명[1], 기존값.get(항목명[1], "")), c11.text_input(항목명[2], 기존값.get(항목명[2], "")), c12.text_input(항목명[3], 기존값.get(항목명[3], ""))]
-
-        mb1, mb2 = st.columns(2)
-        with mb1:
-            if st.button("부원 정보 저장"):
-                if 입력_이름.strip():
+        st.divider()
+        with st.expander("➕ 새 부원 빠른 한 줄 추가"):
+            col_list = st.columns(10)
+            a_이름 = col_list[0].text_input("이름", key="a_n")
+            a_학번 = col_list[1].text_input("학번", key="a_i")
+            a_학과 = col_list[2].selectbox("학과", 상태["설정"]["학과"], key="a_d")
+            a_학년 = col_list[3].selectbox("학년", 상태["설정"]["학년"], key="a_g")
+            a_전화 = col_list[4].text_input("전화번호", key="a_p")
+            a_파트 = col_list[5].selectbox("파트", 상태["설정"]["파트"], key="a_pt")
+            a_통학 = col_list[6].selectbox("통학", 상태["설정"]["통학"], key="a_cm")
+            a_회비 = col_list[7].selectbox("회비", 상태["설정"]["회비"], key="a_fe")
+            
+            항목명 = 상태["부원자료"].columns[-2:] if len(상태["부원자료"].columns) >= 2 else 부원항목[-2:]
+            a_개요1 = col_list[8].text_input(항목명[0], key="a_g1")
+            a_개요2 = col_list[9].text_input(항목명[1], key="a_g2")
+            
+            if st.button("빠른 명단 추가 실행", key="btn_quick_add_b"):
+                if a_이름.strip():
                     데이터_동기화(상태["방번호"])
-                    새_행 = {"이름": 입력_이름, "학번": 입력_학번, "학과": 입력_학과, "학년": 입력_학년, "전화번호": 입력_전화, "파트": 입력_파트, "통학여부": 입력_통학, "회비여부": 입력_회비, 항목명[0]: 개요값[0], 항목명[1]: 개요값[1], 항목명[2]: 개요값[2], 항목명[3]: 개요값[3]}
-                    
-                    if 선택_편집 != "새 부원 추가" and 선택_편집 != 입력_이름:
-                        if 선택_편집 in st.session_state.방정보["db"]:
-                            st.session_state.방정보["db"][입력_이름] = st.session_state.방정보["db"].pop(선택_편집)
-                        for k in st.session_state.방정보["곡정보"]:
-                            st.session_state.방정보["곡정보"][k] = [입력_이름 if x == 선택_편집 else x for x in st.session_state.방정보["곡정보"][k]]
-                    
-                    기존_인덱스 = st.session_state.방정보["부원자료"][st.session_state.방정보["부원자료"]["이름"] == 선택_편집].index if "이름" in st.session_state.방정보["부원자료"].columns else pd.Index([])
-                    if not 기존_인덱스.empty:
-                        for k, v in 새_행.items():
-                            st.session_state.방정보["부원자료"].at[기존_인덱스[0], k] = v
-                    else:
-                        st.session_state.방정보["부원자료"] = pd.concat([st.session_state.방정보["부원자료"], pd.DataFrame([새_행])], ignore_index=True)
-                    
+                    새_행 = {
+                        "이름": a_이름.strip(), "학번": a_학번, "학과": a_학과, "학년": a_학년,
+                        "전화번호": a_전화, "파트": a_파트, "통학여부": a_통학, "회비여부": a_회비,
+                        항목명[0]: a_개요1, 항목명[1]: a_개요2
+                    }
+                    st.session_state.방정보["부원자료"] = pd.concat([st.session_state.방정보["부원자료"], pd.DataFrame([새_행])], ignore_index=True)
                     자료저장()
-                    st.success("부원 정보 저장 완료")
+                    st.success(f"'{a_이름}' 부원이 추가되었습니다.")
                     st.rerun()
                 else:
-                    st.warning("이름은 필수 입력 항목입니다.")
-        with mb2:
-            if 선택_편집 != "새 부원 추가" and st.button("부원 삭제", type="primary"):
-                데이터_동기화(상태["방번호"])
-                if "이름" in st.session_state.방정보["부원자료"].columns:
-                    st.session_state.방정보["부원자료"] = st.session_state.방정보["부원자료"][st.session_state.방정보["부원자료"]["이름"] != 선택_편집]
-                if 선택_편집 in st.session_state.방정보["db"]:
-                    del st.session_state.방정보["db"][선택_편집]
-                for k in st.session_state.방정보["곡정보"]:
-                    st.session_state.방정보["곡정보"][k] = [x for x in st.session_state.방정보["곡정보"][k] if x != 선택_편집]
-                자료저장()
-                st.rerun()
+                    st.warning("이름을 입력해주세요.")
 
 with 탭5:
     st.header("📌 공지 게시판")

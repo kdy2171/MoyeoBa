@@ -11,7 +11,6 @@ st.set_page_config(page_title="동아리 통합 관리", layout="wide")
 
 시간대 = [f"{i}시({i-8}교시)" for i in range(9, 24)]
 요일 = ["월", "화", "수", "목", "금"]
-# 사용자 요청: 개요 항목을 2개로 축소
 부원항목 = ["이름", "학번", "학과", "학년", "전화번호", "파트", "통학여부", "회비여부", "개요1", "개요2"]
 
 # 2. 구글 시트 연결 설정
@@ -301,7 +300,7 @@ with 탭2:
 
 with 탭3:
     st.header("부원 개인 시간표 등록")
-    st.caption("💡 엑셀 표처럼 모든 시간대를 한눈에 보면서 칸을 직접 클릭해 수기로 작성하세요.")
+    st.caption("💡 아래에서 일정을 직접 추가하거나 삭제하여 시간표를 구성하세요.")
     
     부원목록_명단 = 상태["부원자료"]["이름"].tolist() if "이름" in 상태["부원자료"].columns else []
     부원목록_db = list(상태["db"].keys())
@@ -318,20 +317,25 @@ with 탭3:
     if 입력명:
         기존_표 = 상태["db"].get(입력명, 빈_시간표()).copy()
         
-        st.subheader(f"📅 '{입력명}' 님의 시간표 표 (직접 수기 입력)")
+        st.subheader(f"📅 '{입력명}' 님의 시간표")
         
-        # 엑셀처럼 수기로 직접 다 볼 수 있는 data_editor
-        편집_표 = st.data_editor(
-            기존_표,
-            use_container_width=True,
-            key=f"editor_tab3_{입력명}"
-        )
+        # 표는 읽기 전용으로 보여주기만 함 (모바일 스크롤 방해 제거)
+        st.dataframe(기존_표, use_container_width=True)
+        
+        st.divider()
+        st.subheader("개별 일정 추가 및 수정")
+        fc1, fc2, fc3 = st.columns([1, 1, 2])
+        개인요일 = fc1.selectbox("요일 선택", 요일, key="p_day")
+        개인시간 = fc2.selectbox("시간 선택", 시간대, key="p_time")
+        개인내용 = fc3.text_input("일정 내용 (비우고 저장 시 삭제)", key="p_val")
         
         c_save, c_del = st.columns(2)
         with c_save:
-            if st.button("개인 시간표 저장 (Save)", key="btn_save_p_table"):
+            if st.button("해당 칸 저장 (Save)", key="btn_save_p_table"):
                 데이터_동기화(상태["방번호"])
-                st.session_state.방정보["db"][입력명] = 편집_표.fillna("")
+                if 입력명 not in st.session_state.방정보["db"]:
+                    st.session_state.방정보["db"][입력명] = 빈_시간표()
+                st.session_state.방정보["db"][입력명].loc[개인시간, 개인요일] = 개인내용
                 
                 # 부원 명단에 없는 경우 명단에도 추가
                 if "이름" in st.session_state.방정보["부원자료"].columns:
@@ -343,11 +347,11 @@ with 탭3:
                             ignore_index=True
                         )
                 자료저장()
-                st.success(f"'{입력명}' 님의 시간표가 성공적으로 저장되었습니다.")
+                st.success(f"'{입력명}' 님의 일정이 저장되었습니다.")
                 st.rerun()
                 
         with c_del:
-            if 선택명 != "새로 입력" and st.button(f"'{선택명}' 시간표 삭제", type="primary", key="btn_del_p_table"):
+            if 선택명 != "새로 입력" and st.button(f"'{선택명}' 시간표 전체 삭제", type="primary", key="btn_del_p_table"):
                 데이터_동기화(상태["방번호"])
                 if 선택명 in st.session_state.방정보["db"]:
                     del st.session_state.방정보["db"][선택명]
@@ -392,9 +396,13 @@ with 탭4:
                 st.rerun()
 
         st.subheader("📋 부원 명단 (엑셀처럼 한 줄씩 직접 편집)")
-        st.caption("💡 각 행은 부원 1명의 정보입니다. 셀을 직접 수정하고 하단 저장 버튼을 누르세요.")
+        st.caption("💡 각 행에 번호(No.)가 매겨져 있습니다. 셀을 직접 수정하고 하단 저장 버튼을 누르세요.")
+        
+        # 모바일 환경 주의 경고문 추가
+        st.warning("⚠️ 모바일 환경 주의: 칸의 내용을 수정한 뒤, 반드시 표 바깥의 빈 공간을 한 번 터치하여 깜빡이는 커서를 없앤 후 [명단 전체 저장] 버튼을 누르세요.")
         
         컬럼_설정 = {
+            "No.": st.column_config.NumberColumn("No.", disabled=True, width="small"),
             "학과": st.column_config.SelectboxColumn("학과", options=상태["설정"]["학과"]),
             "학년": st.column_config.SelectboxColumn("학년", options=상태["설정"]["학년"]),
             "파트": st.column_config.SelectboxColumn("파트", options=상태["설정"]["파트"]),
@@ -404,8 +412,12 @@ with 탭4:
         
         부원_df = 상태["부원자료"].reindex(columns=부원항목).fillna("")
         
+        # 1번부터 시작하는 번호(No.) 열 추가
+        부원_df_표시 = 부원_df.copy()
+        부원_df_표시.insert(0, "No.", range(1, len(부원_df_표시) + 1))
+        
         수정된_부원_df = st.data_editor(
-            부원_df,
+            부원_df_표시,
             column_config=컬럼_설정,
             use_container_width=True,
             num_rows="dynamic",
@@ -414,41 +426,74 @@ with 탭4:
         
         if st.button("부원 명단 전체 저장", key="btn_save_buwon_all"):
             데이터_동기화(상태["방번호"])
-            st.session_state.방정보["부원자료"] = 수정된_부원_df.fillna("")
+            # No. 열을 제외하고 순수 데이터만 저장
+            저장용_df = 수정된_부원_df.drop(columns=["No."], errors="ignore")
+            st.session_state.방정보["부원자료"] = 저장용_df.fillna("")
             자료저장()
             st.success("부원 명단이 저장되었습니다.")
             st.rerun()
 
         st.divider()
-        with st.expander("➕ 새 부원 빠른 한 줄 추가"):
-            col_list = st.columns(10)
-            a_이름 = col_list[0].text_input("이름", key="a_n")
-            a_학번 = col_list[1].text_input("학번", key="a_i")
-            a_학과 = col_list[2].selectbox("학과", 상태["설정"]["학과"], key="a_d")
-            a_학년 = col_list[3].selectbox("학년", 상태["설정"]["학년"], key="a_g")
-            a_전화 = col_list[4].text_input("전화번호", key="a_p")
-            a_파트 = col_list[5].selectbox("파트", 상태["설정"]["파트"], key="a_pt")
-            a_통학 = col_list[6].selectbox("통학", 상태["설정"]["통학"], key="a_cm")
-            a_회비 = col_list[7].selectbox("회비", 상태["설정"]["회비"], key="a_fe")
-            
-            항목명 = 상태["부원자료"].columns[-2:] if len(상태["부원자료"].columns) >= 2 else 부원항목[-2:]
-            a_개요1 = col_list[8].text_input(항목명[0], key="a_g1")
-            a_개요2 = col_list[9].text_input(항목명[1], key="a_g2")
-            
-            if st.button("빠른 명단 추가 실행", key="btn_quick_add_b"):
-                if a_이름.strip():
-                    데이터_동기화(상태["방번호"])
-                    새_행 = {
-                        "이름": a_이름.strip(), "학번": a_학번, "학과": a_학과, "학년": a_학년,
-                        "전화번호": a_전화, "파트": a_파트, "통학여부": a_통학, "회비여부": a_회비,
-                        항목명[0]: a_개요1, 항목명[1]: a_개요2
-                    }
-                    st.session_state.방정보["부원자료"] = pd.concat([st.session_state.방정보["부원자료"], pd.DataFrame([새_행])], ignore_index=True)
-                    자료저장()
-                    st.success(f"'{a_이름}' 부원이 추가되었습니다.")
-                    st.rerun()
+        col_add, col_del = st.columns(2)
+        
+        with col_add:
+            with st.expander("➕ 새 부원 빠른 한 줄 추가"):
+                col_list = st.columns(10)
+                a_이름 = col_list[0].text_input("이름", key="a_n")
+                a_학번 = col_list[1].text_input("학번", key="a_i")
+                a_학과 = col_list[2].selectbox("학과", 상태["설정"]["학과"], key="a_d")
+                a_학년 = col_list[3].selectbox("학년", 상태["설정"]["학년"], key="a_g")
+                a_전화 = col_list[4].text_input("전화번호", key="a_p")
+                a_파트 = col_list[5].selectbox("파트", 상태["설정"]["파트"], key="a_pt")
+                a_통학 = col_list[6].selectbox("통학", 상태["설정"]["통학"], key="a_cm")
+                a_회비 = col_list[7].selectbox("회비", 상태["설정"]["회비"], key="a_fe")
+                
+                항목명 = 상태["부원자료"].columns[-2:] if len(상태["부원자료"].columns) >= 2 else 부원항목[-2:]
+                a_개요1 = col_list[8].text_input(항목명[0], key="a_g1")
+                a_개요2 = col_list[9].text_input(항목명[1], key="a_g2")
+                
+                if st.button("빠른 명단 추가 실행", key="btn_quick_add_b"):
+                    if a_이름.strip():
+                        데이터_동기화(상태["방번호"])
+                        새_행 = {
+                            "이름": a_이름.strip(), "학번": a_학번, "학과": a_학과, "학년": a_학년,
+                            "전화번호": a_전화, "파트": a_파트, "통학여부": a_통학, "회비여부": a_회비,
+                            항목명[0]: a_개요1, 항목명[1]: a_개요2
+                        }
+                        st.session_state.방정보["부원자료"] = pd.concat([st.session_state.방정보["부원자료"], pd.DataFrame([새_행])], ignore_index=True)
+                        자료저장()
+                        st.success(f"'{a_이름}' 부원이 추가되었습니다.")
+                        st.rerun()
+                    else:
+                        st.warning("이름을 입력해주세요.")
+
+with col_del:
+            with st.expander("🗑️ 부원 개별 삭제"):
+                부원명단_목록 = 상태["부원자료"]["이름"].dropna().tolist() if "이름" in 상태["부원자료"].columns else []
+                if 부원명단_목록:
+                    삭제대상 = st.selectbox("삭제할 부원 선택", 부원명단_목록, key="del_member_select")
+                    if st.button(f"'{삭제대상}' 부원 정보 완전 삭제", type="primary", key="btn_del_member"):
+                        데이터_동기화(상태["방번호"])
+                        
+                        # 명단에서 삭제
+                        if "이름" in st.session_state.방정보["부원자료"].columns:
+                            st.session_state.방정보["부원자료"] = st.session_state.방정보["부원자료"][st.session_state.방정보["부원자료"]["이름"] != 삭제대상]
+                        
+                        # 개인 시간표 db에서 삭제
+                        if 삭제대상 in st.session_state.방정보["db"]:
+                            del st.session_state.방정보["db"][삭제대상]
+                            
+                        # 곡정보에서 안전하게 삭제 (KeyError, TypeError 방지)
+                        if isinstance(st.session_state.방정보.get("곡정보"), dict):
+                            for k, 멤버리스트 in st.session_state.방정보["곡정보"].items():
+                                if isinstance(멤버리스트, list) and 삭제대상 in 멤버리스트:
+                                    멤버리스트.remove(삭제대상)
+                                    
+                        자료저장()
+                        st.success(f"'{삭제대상}' 부원이 완전히 삭제되었습니다.")
+                        st.rerun()
                 else:
-                    st.warning("이름을 입력해주세요.")
+                    st.info("등록된 부원이 없습니다.")
 
 with 탭5:
     st.header("📌 공지 게시판")

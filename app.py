@@ -466,8 +466,7 @@ with 탭4:
                         st.rerun()
                     else:
                         st.warning("이름을 입력해주세요.")
-
-with col_del:
+        with col_del:
             with st.expander("🗑️ 부원 개별 삭제"):
                 부원명단_목록 = 상태["부원자료"]["이름"].dropna().tolist() if "이름" in 상태["부원자료"].columns else []
                 if 부원명단_목록:

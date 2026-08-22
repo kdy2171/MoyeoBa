@@ -4,7 +4,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 import json
 from datetime import datetime
-import io
 
 # 1. 필수 기본 설정
 st.set_page_config(page_title="시간표", layout="wide")
@@ -23,7 +22,7 @@ def 구글문서연결():
 
 시트 = 구글문서연결()
 
-# 3. 데이터 관리 로직
+# 3. 데이터 관리 및 동시성 제어 로직
 def 방찾기(번호):
     try:
         모든데이터 = 시트.get_all_values()
@@ -34,19 +33,48 @@ def 방찾기(번호):
     except:
         return None, None
 
+def 최신_데이터_동기화(방번호):
+    """저장 직전 서버의 최신 데이터를 불러와 세션과 병합하여 Race Condition 방지"""
+    줄번호, 데이터 = 방찾기(방번호)
+    if not 줄번호: return False
+    
+    st.session_state.room_db = pd.DataFrame.from_dict(json.loads(데이터[2])).reindex(index=시간대, columns=요일).fillna("") if 데이터[2] else pd.DataFrame("", index=시간대, columns=요일)
+    st.session_state.부원자료 = pd.DataFrame.from_dict(json.loads(데이터[3])).fillna("") if 데이터[3] else pd.DataFrame(columns=부원항목)
+    
+    임시db = json.loads(데이터[4]) if 데이터[4] else {}
+    st.session_state.db = {n: pd.DataFrame.from_dict(p).reindex(index=시간대, columns=요일).fillna("") for n, p in 임시db.items() if p}
+    
+    s = json.loads(데이터[5]) if 데이터[5] else {}
+    st.session_state.항목_학과 = s.get("학과", ["물리치료학과", "기타학과"])
+    st.session_state.항목_학년 = s.get("학년", ["1", "2", "3", "4"])
+    st.session_state.항목_파트 = s.get("파트", ["보컬", "보컬2", "기타1", "기타2", "통기타", "베이스", "드럼", "키보드", "기타악기"])
+    st.session_state.항목_통학, st.session_state.항목_회비, st.session_state.비밀번호 = s.get("통학", ["o","x"]), s.get("회비", ["o","x"]), s.get("비밀번호", "0000")
+    
+    st.session_state.게시판 = json.loads(데이터[6]) if len(데이터) > 6 and 데이터[6] else []
+    st.session_state.곡정보 = json.loads(데이터[7]) if len(데이터) > 7 and 데이터[7] else {}
+    st.session_state.메모장 = 데이터[8] if len(데이터) > 8 else ""
+    st.session_state.채팅 = json.loads(데이터[9]) if len(데이터) > 9 and 데이터[9] else {}
+    return True
+
 def 자료저장():
-    방자료 = st.session_state.room_db.to_json(force_ascii=False)
-    부원자료 = st.session_state.부원자료.reset_index(drop=True).to_json(force_ascii=False)
-    개인db = json.dumps({이름: 표.to_json(force_ascii=False) for 이름, 표 in st.session_state.db.items()}, ensure_ascii=False)
+    """불필요한 공백 제거(separators) 및 딕셔너리 변환으로 JSON 용량 최적화"""
+    방자료 = json.dumps(st.session_state.room_db.to_dict(), ensure_ascii=False, separators=(',', ':'))
+    부원자료 = json.dumps(st.session_state.부원자료.to_dict('records'), ensure_ascii=False, separators=(',', ':'))
+    개인db_dict = {이름: 표.to_dict() for 이름, 표 in st.session_state.db.items()}
+    개인db = json.dumps(개인db_dict, ensure_ascii=False, separators=(',', ':'))
     설정 = json.dumps({
         "학과": st.session_state.항목_학과, "학년": st.session_state.항목_학년, "파트": st.session_state.항목_파트,
         "통학": st.session_state.항목_통학, "회비": st.session_state.항목_회비, "비밀번호": st.session_state.비밀번호,
         "팀이름": st.session_state.팀이름
-    }, ensure_ascii=False)
-    게시판 = json.dumps(st.session_state.게시판, ensure_ascii=False)
-    곡정보 = json.dumps(st.session_state.곡정보, ensure_ascii=False)
+    }, ensure_ascii=False, separators=(',', ':'))
+    게시판 = json.dumps(st.session_state.게시판, ensure_ascii=False, separators=(',', ':'))
+    곡정보 = json.dumps(st.session_state.곡정보, ensure_ascii=False, separators=(',', ':'))
     메모장 = st.session_state.메모장
-    채팅 = json.dumps(st.session_state.채팅, ensure_ascii=False)
+    
+    # 채팅 용량 제한 (각 방별 최신 100개 유지)
+    for 곡 in st.session_state.채팅:
+        st.session_state.채팅[곡] = st.session_state.채팅[곡][-100:]
+    채팅 = json.dumps(st.session_state.채팅, ensure_ascii=False, separators=(',', ':'))
     
     새데이터 = [st.session_state["방번호"], st.session_state["팀이름"], 방자료, 부원자료, 개인db, 설정, 게시판, 곡정보, 메모장, 채팅]
     줄번호, _ = 방찾기(st.session_state["방번호"])
@@ -67,41 +95,15 @@ if st.session_state["방번호"] == "":
     with 입장탭:
         입력번호 = st.text_input("팀 식별번호를 입력하세요")
         if st.button("입장하기"):
-            줄번호, 데이터 = 방찾기(입력번호)
-            if 줄번호:
+            if 최신_데이터_동기화(입력번호):
+                _, 데이터 = 방찾기(입력번호)
                 st.session_state["방번호"] = 데이터[0]
                 st.session_state["팀이름"] = 데이터[1]
-                
-                # DataFrame reindex 추가: 빈 데이터로 저장되어 표 구조가 무너지는 현상 방지
-                if 데이터[2]:
-                    temp_df = pd.read_json(io.StringIO(데이터[2]))
-                    st.session_state.room_db = temp_df.reindex(index=시간대, columns=요일).fillna("")
-                else:
-                    st.session_state.room_db = pd.DataFrame("", index=시간대, columns=요일)
-                
-                st.session_state.부원자료 = pd.read_json(io.StringIO(데이터[3])).fillna("") if 데이터[3] else pd.DataFrame(columns=부원항목)
-                
-                임시db = json.loads(데이터[4]) if 데이터[4] else {}
-                st.session_state.db = {}
-                for n, p in 임시db.items():
-                    if p:
-                        temp_df = pd.read_json(io.StringIO(p))
-                        st.session_state.db[n] = temp_df.reindex(index=시간대, columns=요일).fillna("")
-                
-                s = json.loads(데이터[5]) if 데이터[5] else {}
-                st.session_state.항목_학과 = s.get("학과", ["물리치료학과", "기타학과"])
-                st.session_state.항목_학년 = s.get("학년", ["1", "2", "3", "4"])
-                st.session_state.항목_파트 = s.get("파트", ["보컬", "보컬2", "기타1", "기타2", "통기타", "베이스", "드럼", "키보드", "기타악기"])
-                st.session_state.항목_통학, st.session_state.항목_회비, st.session_state.비밀번호 = s.get("통학", ["o","x"]), s.get("회비", ["o","x"]), s.get("비밀번호", "0000")
-                st.session_state.게시판 = json.loads(데이터[6]) if len(데이터) > 6 else []
-                st.session_state.곡정보 = json.loads(데이터[7]) if len(데이터) > 7 else {}
-                st.session_state.메모장 = 데이터[8] if len(데이터) > 8 else ""
-                st.session_state.채팅 = json.loads(데이터[9]) if len(데이터) > 9 else {}
-                
-                st.session_state.인증완료, st.session_state.새로고침번호 = False, 0
+                st.session_state.인증완료 = False
                 st.session_state.temp_선택 = [] 
                 st.rerun()
-            else: st.error("방을 찾을 수 없습니다.")
+            else: 
+                st.error("방을 찾을 수 없습니다.")
 
     with 생성탭:
         새번호, 새이름 = st.text_input("식별번호"), st.text_input("팀 이름")
@@ -117,7 +119,7 @@ if st.session_state["방번호"] == "":
                     "항목_학과": ["물리치료학과", "기타학과"], "항목_학년": ["1", "2", "3", "4"], 
                     "항목_파트": ["보컬", "보컬2", "기타1", "기타2", "통기타", "베이스", "드럼", "키보드", "기타악기"], 
                     "항목_통학": ["o", "x"], "항목_회비": ["o", "x"], "비밀번호": "0000", 
-                    "인증완료": False, "새로고침번호": 0
+                    "인증완료": False
                 })
                 자료저장(); st.rerun()
     st.stop()
@@ -130,11 +132,19 @@ if st.button("로그아웃"): st.session_state["방번호"] = ""; st.rerun()
 
 with 탭1:
     st.header("동아리방 시간표 관리")
-    새방 = st.data_editor(st.session_state.room_db, use_container_width=True, key=f"r_{st.session_state.새로고침번호}")
-    if st.button("방 시간표 저장"): 
-        st.session_state.room_db = 새방.fillna("")
-        st.session_state.새로고침번호 += 1 # 캐시 강제 무효화
+    st.dataframe(st.session_state.room_db, use_container_width=True)
+    
+    st.subheader("일정 개별 추가/삭제")
+    c1, c2, c3 = st.columns([1, 1, 2])
+    선택요일1 = c1.selectbox("요일", 요일, key="room_day")
+    선택시간1 = c2.selectbox("시간", 시간대, key="room_time")
+    입력내용1 = c3.text_input("일정 내용 (비우면 삭제됨)", key="room_content")
+    
+    if st.button("동아리방 일정 업데이트"):
+        최신_데이터_동기화(st.session_state["방번호"])
+        st.session_state.room_db.loc[선택시간1, 선택요일1] = 입력내용1
         자료저장()
+        st.success("업데이트 되었습니다.")
         st.rerun()
 
 with 탭2:
@@ -146,6 +156,7 @@ with 탭2:
         참여멤버 = c2.multiselect("멤버 선택", list(st.session_state.db.keys()))
         if st.button("곡 멤버 정보 저장"):
             if 곡이름 and 참여멤버:
+                최신_데이터_동기화(st.session_state["방번호"])
                 st.session_state.곡정보[곡이름] = 참여멤버
                 자료저장(); st.success(f"'{곡이름}' 멤버 설정 완료"); st.rerun()
             else: st.warning("곡 이름과 멤버를 입력해주세요.")
@@ -156,6 +167,7 @@ with 탭2:
                 sc1, sc2 = st.columns([4, 1])
                 sc1.write(f"**{곡}**: {', '.join(멤버들)}")
                 if sc2.button("삭제", key=f"del_{곡}"):
+                    최신_데이터_동기화(st.session_state["방번호"])
                     if 곡 in st.session_state.곡정보:
                         del st.session_state.곡정보[곡]
                         자료저장()
@@ -184,8 +196,6 @@ with 탭2:
                     if len(값들) == len(선택) and len(set(값들)) == 1: 공통.loc[t, d] = 값들[0]
                     elif 값들: 공통.loc[t, d] = " "
             def 색(v): return "background-color: #d3d3d3; color: #d3d3d3" if v == " " else ("background-color: #FFF2CC; color: black" if v != "" else "")
-            
-            st.write("아래 표는 확인용입니다. 일정은 표 밑에서 추가해 주세요.")
             st.dataframe(공통.style.map(색), use_container_width=True)
             
         if len(선택) >= 1:
@@ -200,19 +210,19 @@ with 탭2:
             with 버튼1:
                 if st.button("선택한 부원(들)에게 일정 추가"):
                     if 입력내용:
+                        최신_데이터_동기화(st.session_state["방번호"])
                         for 부원 in 선택: 
                             st.session_state.db[부원].loc[선택시간, 선택요일] = 입력내용
                         st.session_state.room_db.loc[선택시간, 선택요일] = 입력내용
-                        st.session_state.새로고침번호 += 1 # 캐시 강제 무효화
                         자료저장(); st.rerun()
                     else:
                         st.warning("일정 내용을 적어주세요.")
             with 버튼2:
                 if st.button("해당 시간 일정 삭제 (Clear)"):
+                    최신_데이터_동기화(st.session_state["방번호"])
                     for 부원 in 선택:
                         st.session_state.db[부원].loc[선택시간, 선택요일] = ""
                     st.session_state.room_db.loc[선택시간, 선택요일] = ""
-                    st.session_state.새로고침번호 += 1 # 캐시 강제 무효화
                     자료저장(); st.rerun()
     else: 
         st.info("등록된 부원 시간표가 없습니다.")
@@ -220,32 +230,44 @@ with 탭2:
 with 탭3:
     st.header("부원 개인 시간표 등록")
     이름들 = ["새로 입력"] + sorted(list(st.session_state.db.keys()))
-    선택명 = st.selectbox("이름 선택", 이름들, key=f"n_{st.session_state.새로고침번호}")
-    입력명 = st.text_input("새 이름") if 선택명 == "새로 입력" else 선택명
-    기존 = st.session_state.db[입력명].copy() if 입력명 in st.session_state.db else pd.DataFrame("", index=시간대, columns=요일)
-    새표 = st.data_editor(기존, use_container_width=True, key=f"s_{st.session_state.새로고침번호}")
-    저장버튼, 삭제버튼 = st.columns(2)
-    with 저장버튼:
-        if st.button("개인 시간표 저장 (Save)"):
-            if 입력명 and 입력명 != "새로 입력": 
-                st.session_state.db[입력명] = 새표.fillna("")
-                st.session_state.새로고침번호 += 1 # 캐시 강제 무효화
+    선택명 = st.selectbox("이름 선택", 이름들)
+    
+    if 선택명 == "새로 입력":
+        입력명 = st.text_input("새 이름")
+        if 입력명:
+            st.info("이름을 입력했습니다. 아래에서 일정을 하나씩 추가하여 시간표를 구성하세요.")
+    else:
+        입력명 = 선택명
+        st.dataframe(st.session_state.db[입력명], use_container_width=True)
+
+    if 입력명:
+        st.write("---")
+        st.subheader("개별 일정 추가 및 수정")
+        fc1, fc2, fc3 = st.columns([1,1,2])
+        개인요일 = fc1.selectbox("요일 선택", 요일, key="p_day")
+        개인시간 = fc2.selectbox("시간 선택", 시간대, key="p_time")
+        개인내용 = fc3.text_input("일정 내용 (비우고 저장 시 삭제)", key="p_content")
+        
+        저장버튼, 삭제버튼 = st.columns(2)
+        with 저장버튼:
+            if st.button("해당 칸 저장"):
+                최신_데이터_동기화(st.session_state["방번호"])
+                if 입력명 not in st.session_state.db:
+                    st.session_state.db[입력명] = pd.DataFrame("", index=시간대, columns=요일)
+                st.session_state.db[입력명].loc[개인시간, 개인요일] = 개인내용
                 자료저장()
+                st.success("저장되었습니다.")
                 st.rerun()
-            else:
-                st.warning("정확한 부원 이름을 입력한 후 저장해주세요.")
-    with 삭제버튼:
-        if 선택명 != "새로 입력" and st.button(f"'{선택명}' 부원 정보 삭제 (Delete)"):
-            if 선택명 in st.session_state.db:
-                del st.session_state.db[선택명]
-            st.session_state.부원자료 = st.session_state.부원자료[st.session_state.부원자료['이름'] != 선택명]
-            
-            for 곡, 멤버들 in st.session_state.곡정보.items():
-                if 선택명 in 멤버들:
-                    멤버들.remove(선택명)
-                    
-            st.session_state.새로고침번호 += 1 # 캐시 강제 무효화
-            자료저장(); st.rerun()
+        with 삭제버튼:
+            if 선택명 != "새로 입력" and st.button(f"'{선택명}' 부원 정보 완전히 삭제"):
+                최신_데이터_동기화(st.session_state["방번호"])
+                if 선택명 in st.session_state.db:
+                    del st.session_state.db[선택명]
+                st.session_state.부원자료 = st.session_state.부원자료[st.session_state.부원자료['이름'] != 선택명]
+                for 곡, 멤버들 in st.session_state.곡정보.items():
+                    if 선택명 in 멤버들: 멤버들.remove(선택명)
+                자료저장(); st.rerun()
+
 with 탭4:
     st.header("부원 정보 관리")
     if not st.session_state.인증완료:
@@ -261,8 +283,12 @@ with 탭4:
         with st.expander("⚙️ 설정"):
             현재항목 = st.session_state.부원자료.columns[-4:]
             c1, c2, c3, c4 = st.columns(4)
-            새이름일, 새이름이, 새이름삼, 새이름사 = c1.text_input("첫 번째", 현재항목[0]), c2.text_input("두 번째", 현재항목[1]), c3.text_input("세 번째", 현재항목[2]), c4.text_input("네 번째", 현재항목[3])
+            새이름일 = c1.text_input("첫 번째", 현재항목[0])
+            새이름이 = c2.text_input("두 번째", 현재항목[1])
+            새이름삼 = c3.text_input("세 번째", 현재항목[2])
+            새이름사 = c4.text_input("네 번째", 현재항목[3])
             if st.button("항목 이름 적용"):
+                최신_데이터_동기화(st.session_state["방번호"])
                 st.session_state.부원자료 = st.session_state.부원자료.rename(columns={현재항목[0]: 새이름일, 현재항목[1]: 새이름이, 현재항목[2]: 새이름삼, 현재항목[3]: 새이름사})
                 자료저장(); st.rerun()
             st.divider()
@@ -271,7 +297,9 @@ with 탭4:
             st.session_state.항목_파트 = [x.strip() for x in sc1.text_input("파트 리스트", ", ".join(st.session_state.항목_파트)).split(",") if x.strip()]
             st.session_state.항목_학년 = [x.strip() for x in sc2.text_input("학년 리스트", ", ".join(st.session_state.항목_학년)).split(",") if x.strip()]
             st.session_state.비밀번호 = sc2.text_input("비번 변경", st.session_state.비밀번호)
-            if st.button("설정 저장"): 자료저장(); st.rerun()
+            if st.button("설정 저장"): 
+                최신_데이터_동기화(st.session_state["방번호"])
+                자료저장(); st.rerun()
 
         컬럼설정 = {
             "학과": st.column_config.SelectboxColumn(options=st.session_state.항목_학과),
@@ -286,11 +314,17 @@ with 탭4:
         추가 = st.data_editor(st.session_state.새부원표, column_config=컬럼설정, use_container_width=True, key="add")
         if st.button("명단 추가"):
             if str(추가.iloc[0,0]).strip():
-                st.session_state.부원자료 = pd.concat([st.session_state.부원자료, 추가], ignore_index=True); 자료저장(); st.rerun()
+                최신_데이터_동기화(st.session_state["방번호"])
+                st.session_state.부원자료 = pd.concat([st.session_state.부원자료, 추가], ignore_index=True)
+                자료저장(); st.rerun()
         
         st.subheader("명단 전체 수정")
+        st.warning("⚠️ 모바일 환경 주의: 표의 글자를 수정한 뒤, 반드시 표 바깥의 빈 공간을 한 번 터치하여 커서를 없앤 후 '명단 전체 저장' 버튼을 누르세요.")
         수정 = st.data_editor(st.session_state.부원자료, column_config=컬럼설정, use_container_width=True, num_rows="dynamic", key="edit")
-        if st.button("명단 전체 저장"): st.session_state.부원자료 = 수정.fillna(""); 자료저장(); st.rerun()
+        if st.button("명단 전체 저장"): 
+            최신_데이터_동기화(st.session_state["방번호"])
+            st.session_state.부원자료 = 수정.fillna("")
+            자료저장(); st.rerun()
 
 with 탭5:
     st.header("📌 공지 게시판")
@@ -299,16 +333,21 @@ with 탭5:
         비번 = st.text_input("관리자 비번", type="password")
         if st.button("등록"):
             if 비번 == st.session_state.비밀번호 and 제목 and 내용:
+                최신_데이터_동기화(st.session_state["방번호"])
                 st.session_state.게시판.insert(0, {"날짜": datetime.now().strftime("%Y-%m-%d %H:%M"), "제목": 제목, "내용": 내용})
                 자료저장(); st.rerun()
     for idx, 글 in enumerate(st.session_state.게시판):
         st.info(f"**[{글['날짜']}] {글['제목']}**\n\n{글['내용']}")
-        if st.session_state.인증완료 and st.button(f"삭제 {idx}"): st.session_state.게시판.pop(idx); 자료저장(); st.rerun()
+        if st.session_state.인증완료 and st.button(f"삭제 {idx}"): 
+            최신_데이터_동기화(st.session_state["방번호"])
+            st.session_state.게시판.pop(idx)
+            자료저장(); st.rerun()
 
 with 탭6:
     st.header("📝 팀 공용 메모장")
     메모내용 = st.text_area("내용을 입력하고 저장 버튼을 누르세요.", value=st.session_state.메모장, height=500)
     if st.button("메모 저장"):
+        최신_데이터_동기화(st.session_state["방번호"])
         st.session_state.메모장 = 메모내용
         자료저장(); st.success("메모가 안전하게 저장되었습니다."); st.rerun()
 
@@ -332,11 +371,8 @@ with 탭7:
         if st.session_state.get("current_chat_user"):
             st.write(f"현재 접속 계정: **{st.session_state.current_chat_user}**")
             
-            # 수동 새로고침 버튼 (페이지 이탈 없이 채팅만 갱신)
             if st.button("🔄 새 메시지 확인 (새로고침)"):
-                줄번호, 데이터 = 방찾기(st.session_state["방번호"])
-                if 줄번호 and len(데이터) > 9:
-                    st.session_state.채팅 = json.loads(데이터[9]) if 데이터[9] else {}
+                최신_데이터_동기화(st.session_state["방번호"])
                 st.rerun()
             
             st.divider()
@@ -350,11 +386,7 @@ with 탭7:
                 
             메시지 = st.chat_input("메시지를 입력하세요.")
             if 메시지:
-                # 데이터 덮어쓰기 방지를 위해 저장 직전 최신 DB 동기화
-                줄번호, 데이터 = 방찾기(st.session_state["방번호"])
-                if 줄번호 and len(데이터) > 9:
-                    st.session_state.채팅 = json.loads(데이터[9]) if 데이터[9] else {}
-                
+                최신_데이터_동기화(st.session_state["방번호"])
                 if 곡선택 not in st.session_state.채팅:
                     st.session_state.채팅[곡선택] = []
                     
